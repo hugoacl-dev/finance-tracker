@@ -37,6 +37,13 @@ def _build_full_prompt(master_prompt, mes_insight, r, RECEITA_BASE, META_APORTE,
     context += f"Δ vs Meta: R$ {delta_meta:+,.2f}\n"
     context += f"Savings Rate: {savings_rate:.1f}%\n"
 
+    if not r['df_config'].empty:
+        context += "\n--- GASTOS FIXOS (DETALHADO) ---\n"
+        for _, row in r['df_config'].iterrows():
+            tipo = row.get('Tipo', '')
+            tipo_str = f" [{tipo}]" if tipo else ""
+            context += f"- {row['Descricao_Fatura']}{tipo_str}: R$ {row['Valor']:,.2f}\n"
+
     if not r['df_ops'].empty:
         gastos_por_cat = r['df_ops'].groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
         context += "\n--- GASTOS VARIÁVEIS POR CATEGORIA ---\n"
@@ -44,9 +51,9 @@ def _build_full_prompt(master_prompt, mes_insight, r, RECEITA_BASE, META_APORTE,
             pct_cat = (val / r['total_variaveis'] * 100) if r['total_variaveis'] > 0 else 0
             context += f"- {cat}: R$ {val:,.2f} ({pct_cat:.1f}% dos variáveis)\n"
 
-        top5 = r['df_ops'].nlargest(5, "Valor")
-        context += "\nTop 5 Maiores Gastos Individuais:\n"
-        for _, row in top5.iterrows():
+        context += "\n--- GASTOS VARIÁVEIS (DETALHADO) ---\n"
+        df_sorted = r['df_ops'].sort_values("Valor", ascending=False)
+        for _, row in df_sorted.iterrows():
             cat_str = row.get('Categoria', 'Outros')
             context += f"- {row['Descricao']} ({cat_str}): R$ {row['Valor']:,.2f}\n"
 
