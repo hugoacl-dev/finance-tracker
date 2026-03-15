@@ -76,8 +76,19 @@ def get_gemini_models(supabase: Client, profile_name: str) -> tuple[str, str]:
     return "gemini-2.5-flash", "gemini-2.0-flash"
 
 
+PADRAO_PARCELADO = re.compile(r"\d{2}\s+\d{2}$")
+
+
+def _is_rotativo(descricao: str) -> bool:
+    """Retorna True se a transação é parcelada/rotativa (descrição termina em 'XX YY')."""
+    return bool(PADRAO_PARCELADO.search(descricao.strip()))
+
+
 def inferir_ciclo(transacoes: list[dict], supabase: Client) -> str:
     """Infere o ciclo a partir das datas dos lançamentos e busca o formato existente no banco.
+
+    Transações parceladas/rotativas (descrição termina em 'XX YY') são ignoradas
+    na inferência do ciclo — elas entram no ciclo inferido pelas demais transações.
 
     Regra: dia <= 13 → mês corrente, dia >= 14 → mês seguinte.
     Formato: busca ciclo existente no banco. Se não existir, usa MM/AA.
@@ -88,6 +99,8 @@ def inferir_ciclo(transacoes: list[dict], supabase: Client) -> str:
 
     for t in transacoes:
         desc = t.get("Descricao", "")
+        if _is_rotativo(desc):
+            continue
         m = padrao.search(desc)
         if m:
             dia, mes = int(m.group(1)), int(m.group(2))
