@@ -23,12 +23,16 @@ cfg = {**DEFAULTS, **cfg_raw} if cfg_raw else DEFAULTS.copy()
 
 mensal_data = data_service.get_mensal_data(perfil_ativo)
 transacoes_data = data_service.get_transacoes_data(perfil_ativo)
+goals_data = data_service.get_goals(perfil_ativo)
+category_budgets_data = data_service.get_category_budgets(perfil_ativo)
 
 # Inject into Session State for the Views
 st.session_state["cfg"] = cfg
 st.session_state["cfg_raw"] = cfg_raw
 st.session_state["transacoes_data"] = transacoes_data
 st.session_state["mensal_data"] = mensal_data
+st.session_state["goals_data"] = goals_data
+st.session_state["category_budgets_data"] = category_budgets_data
 st.session_state["data_service"] = data_service
 
 # ── Onboarding Guard ──
