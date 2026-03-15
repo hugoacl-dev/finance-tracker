@@ -75,6 +75,8 @@ def render_page():
             dias = 0
             
         limite_diario = r["saldo_variaveis"] / dias if dias > 0 else 0
+        budget_diario_inicial = r["limite_base_var"] / 30 if r["limite_base_var"] > 0 else 1
+        pct_limite = (limite_diario / budget_diario_inicial) * 100
 
         # Savings Rate
         savings_rate = (r["aporte_real"] / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
@@ -168,13 +170,13 @@ def render_page():
                     })
     
         # 4. Gatilho de Sobrevivência (Controle de Limite Diário)
-        if limite_diario < 300:
+        if pct_limite < 30:
             alertas_acoes.append({
                 "tipo": "error",
                 "titulo": "🔴 Alerta Máximo de Sobrevivência",
                 "mensagem": f"Seu limite diário despencou para R$ {limite_diario:,.2f}. Ajuste o freio."
             })
-        elif limite_diario < 400:
+        elif pct_limite < 50:
             alertas_acoes.append({
                 "tipo": "warning",
                 "titulo": "🟡 Atenção no Limite Diário",
@@ -212,8 +214,8 @@ def render_page():
             _proj_var = _burn * _total_cycle
             _proj_total = r["total_fixos"] + _proj_var
 
-            limit_color = "#00e676" if limite_diario >= 400 else ("#ffd600" if limite_diario >= 300 else "#ff1744")
-            danger_cls = " danger" if limite_diario < 300 else ""
+            limit_color = "#00e676" if pct_limite >= 50 else ("#ffd600" if pct_limite >= 30 else "#ff1744")
+            danger_cls = " danger" if pct_limite < 30 else ""
             st.markdown(f"""
             <div class="survival-card{danger_cls}">
                 <div class="label">Limite diário de sobrevivência</div>
