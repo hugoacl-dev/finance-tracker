@@ -1,0 +1,19 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS specific
+.DS_Store
+
+# Data files (live in Supabase, not in repo)
+*.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
