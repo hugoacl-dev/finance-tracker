@@ -16,6 +16,8 @@ def render_page():
     cfg = st.session_state.get("cfg", {})
     transacoes_data = st.session_state.get("transacoes_data", {})
     mensal_data = st.session_state.get("mensal_data", {})
+    goals_data = st.session_state.get("goals_data", [])
+    category_budgets_data = st.session_state.get("category_budgets_data", {})
     perfil_ativo = st.session_state.get("perfil_ativo", "Principal")
     gemini_client = get_gemini_client()
     
@@ -30,6 +32,7 @@ def render_page():
     GEMINI_VISION_MODEL = cfg.get("Gemini_Vision_Model", "gemini-3.1-pro-preview")
     CARTOES_ACEITOS   = cfg.get("Cartoes_Aceitos")
     CARTOES_EXCLUIDOS = cfg.get("Cartoes_Excluidos")
+    REGRAS_IA = cfg.get("Regras_IA", "")
     
     st.markdown('<p class="section-header">🤖 Consultoria Financeira com IA</p>', unsafe_allow_html=True)
     
@@ -70,6 +73,7 @@ def render_page():
                 "Analise como um detetive financeiro:\n"
                 "- Identifique os 3 maiores \"ralos\" (categorias que mais consumiram)\n"
                 "- Para cada um, classifique: 🟢 Necessário | 🟡 Questionável | 🔴 Inflação de Estilo de Vida\n"
+                "- Se houver limites por categoria, indique quais foram respeitados e quais foram ultrapassados\n"
                 "- Destaque um padrão comportamental (ex: \"gastos com delivery concentrados nos finais de semana "
                 "sugere compra emocional por cansaço\")\n\n"
                 "## 📊 Patrimônio: Estou Enriquecendo?\n"
@@ -78,6 +82,10 @@ def render_page():
                 "- Aporte Real vs Meta: bateu? Se não, quanto faltou em R$ e em % da meta?\n"
                 "- Projeção de impacto: \"Se mantiver esse ritmo por 12 meses, isso representa R$ X a menos "
                 "no patrimônio vs o planejado\"\n\n"
+                "## 🏆 Metas de Longo Prazo\n"
+                "Se houver metas cadastradas, avalie:\n"
+                "- O aporte real deste ciclo é suficiente para atingi-las no prazo?\n"
+                "- Qual meta está mais em risco dado o ritmo atual?\n\n"
                 "## 🎯 Prescrição (Máx. 3 Ações)\n"
                 "Liste EXATAMENTE 2 ou 3 ações cirúrgicas para os próximos dias. Cada ação deve ter:\n"
                 "- O QUE fazer (específico, não genérico)\n"
@@ -133,8 +141,29 @@ def render_page():
                     for _, row in top5.iterrows():
                         cat_str = row.get('Categoria', 'Outros')
                         context += f"- {row['Descricao']} ({cat_str}): R$ {row['Valor']:,.2f}\n"
-                        
-                full_analysis_prompt = master_prompt + context
+
+                if category_budgets_data:
+                    context += "\n--- LIMITES POR CATEGORIA (ORÇAMENTO) ---\n"
+                    if not r['df_ops'].empty:
+                        gastos_cat = r['df_ops'].groupby("Categoria")["Valor"].sum()
+                        for cat, limite in category_budgets_data.items():
+                            gasto_real = float(gastos_cat.get(cat, 0))
+                            status = "✅ dentro" if gasto_real <= limite else f"⚠️ ESTOURADO em R$ {gasto_real - limite:,.2f}"
+                            context += f"- {cat}: limite R$ {limite:,.2f} | gasto R$ {gasto_real:,.2f} ({status})\n"
+                    else:
+                        for cat, limite in category_budgets_data.items():
+                            context += f"- {cat}: limite R$ {limite:,.2f}\n"
+
+                if goals_data:
+                    context += "\n--- METAS DE LONGO PRAZO ---\n"
+                    for g in goals_data:
+                        prazo = g.get('prazo_meses', 0)
+                        valor_alvo = g.get('valor_alvo', 0)
+                        aporte_necessario = valor_alvo / prazo if prazo > 0 else 0
+                        context += f"- {g['titulo']}: R$ {valor_alvo:,.2f} em {prazo} meses (requer R$ {aporte_necessario:,.2f}/mês)\n"
+
+                rules_section = f"\n\nREGRAS PERSONALIZADAS DO USUÁRIO:\n{REGRAS_IA}" if REGRAS_IA else ""
+                full_analysis_prompt = master_prompt + rules_section + context
                 
                 # Adiciona ao chat a indicação de que o usuário solicitou o relatório longo
                 st.session_state[chat_key].append({"role": "user", "content": "*(Solicitou Geração do Diagnóstico Financeiro Completo)*"})
