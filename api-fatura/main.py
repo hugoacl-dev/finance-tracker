@@ -313,8 +313,8 @@ def dedup_transacoes(
 # ── Gemini: OCR ──
 
 PROMPT_OCR = """Você é um extrator de dados financeiros impiedosamente preciso.
-Leia a imagem anexada (fatura de cartão) e extraia TODAS as transações de compra.
-Pule tudo que não for compra explícita.
+Leia a imagem anexada (fatura de cartão) e extraia TODOS os lançamentos com valor monetário: compras, tarifas, anuidades, encargos, parcelas e quaisquer outros débitos.
+Pule apenas totais, subtotais, cabeçalhos e linhas sem valor monetário.
 
 [REGRA DE TITULAR E CARTÃO]
 Faturas bancárias geralmente dividem os blocos por titular. Ex: 'Final XXXX - NOME DO TITULAR'.
