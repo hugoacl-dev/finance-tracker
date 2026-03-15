@@ -1,3 +1,4 @@
+import os
 import subprocess
 import streamlit as st
 from views.styles import render_styles
@@ -7,10 +8,11 @@ from services import get_data_service
 
 def _get_git_version() -> str:
     try:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
         return subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True,
-            cwd="/home/user/finance-tracker"
+            cwd=app_dir
         ).stdout.strip() or "?"
     except Exception:
         return "?"
