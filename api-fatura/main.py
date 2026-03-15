@@ -90,7 +90,7 @@ def inferir_ciclo(transacoes: list[dict], supabase: Client) -> str:
     Transações parceladas/rotativas (descrição termina em 'XX YY') são ignoradas
     na inferência do ciclo — elas entram no ciclo inferido pelas demais transações.
 
-    Regra: dia <= 13 → mês corrente, dia >= 14 → mês seguinte.
+    Regra: dia <= 15 → mês corrente, dia >= 16 → mês seguinte.
     Formato: busca ciclo existente no banco. Se não existir, usa MM/AA.
     """
     padrao = re.compile(r"(\d{2})/(\d{2})")
@@ -112,7 +112,7 @@ def inferir_ciclo(transacoes: list[dict], supabase: Client) -> str:
         hoje = date.today()
         target_mes = hoje.month
         target_ano = hoje.year
-    elif max_dia >= 14:
+    elif max_dia >= 16:
         target_mes = max_mes + 1
         target_ano = date.today().year
         if target_mes > 12:
