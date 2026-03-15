@@ -103,114 +103,114 @@ def render_page():
     else:
         mes_insight = st.selectbox("Selecione o mês para a Consultoria", all_meses, index=len(all_meses) - 1, key="mes_insight_sel")
 
-        if not gemini_client:
-            st.warning("⚠️ API do Gemini não configurada. Adicione GEMINI_API_KEY no secrets do Streamlit.")
-        else:
-            # ---- Feature 3: Chatbot Financeiro ----
-            st.caption("Gere um diagnóstico base ou converse livremente com a IA sobre o seu orçamento.")
+        # chat_key definido aqui para estar disponível em todo o bloco
+        chat_key = f"chat_history_{mes_insight}"
+        if chat_key not in st.session_state:
+            st.session_state[chat_key] = []
 
-            # Inicializa o histórico do chat
-            chat_key = f"chat_history_{mes_insight}"
-            if chat_key not in st.session_state:
-                st.session_state[chat_key] = []
+        # --- Prompt Editável — visível sempre (necessário para o botão Copiar) ---
+        default_prompt = (
+            "Você é um CFP® (Certified Financial Planner) com especialização em Behavioral Finance "
+            "e 20 anos de experiência com jovens profissionais de alta renda. Você combina rigor analítico "
+            "com empatia — nunca julga, mas nunca mente.\n\n"
+            "ESTILO DE COMUNICAÇÃO:\n"
+            "- Tom de conversa entre mentor e mentorado — direto, sem ser frio\n"
+            "- Use analogias do cotidiano para tornar conceitos financeiros tangíveis\n"
+            "- Números sempre em R$ formatados (R$ 1.234,56)\n"
+            "- Markdown limpo com emojis como marcadores visuais, sem exagero\n\n"
+            "ESTRUTURA DA ANÁLISE:\n\n"
+            "## 🩺 Diagnóstico Financeiro\n"
+            "Avalie a saúde do ciclo em UMA frase-resumo (tipo \"nota do médico\"). Depois detalhe:\n"
+            "- Relação Comprometido vs Teto: estourou? Por quanto? Se não, quão próximo ficou?\n"
+            "- Composição Fixos vs Variáveis: qual % da renda cada um consome? A proporção é sustentável "
+            "para quem quer construir patrimônio?\n"
+            "- Compare com a regra 50/30/20 adaptada ao perfil do cliente\n\n"
+            "## 🔍 Raio-X dos Gastos Variáveis\n"
+            "Analise como um detetive financeiro:\n"
+            "- Identifique os 3 maiores \"ralos\" (categorias que mais consumiram)\n"
+            "- Para cada um, classifique: 🟢 Necessário | 🟡 Questionável | 🔴 Inflação de Estilo de Vida\n"
+            "- Se houver limites por categoria, indique quais foram respeitados e quais foram ultrapassados\n"
+            "- Destaque um padrão comportamental (ex: \"gastos com delivery concentrados nos finais de semana "
+            "sugere compra emocional por cansaço\")\n\n"
+            "## 📊 Patrimônio: Estou Enriquecendo?\n"
+            "Esta é a seção mais importante — o cliente quer saber se está ficando mais rico:\n"
+            "- Savings Rate deste ciclo: X%. Benchmark: ≥30% excelente, 20-30% bom, <20% risco\n"
+            "- Aporte Real vs Meta: bateu? Se não, quanto faltou em R$ e em % da meta?\n"
+            "- Projeção de impacto: \"Se mantiver esse ritmo por 12 meses, isso representa R$ X a menos "
+            "no patrimônio vs o planejado\"\n\n"
+            "## 🏆 Metas de Longo Prazo\n"
+            "Se houver metas cadastradas, avalie:\n"
+            "- O aporte real deste ciclo é suficiente para atingi-las no prazo?\n"
+            "- Qual meta está mais em risco dado o ritmo atual?\n\n"
+            "## 🎯 Prescrição (Máx. 3 Ações)\n"
+            "Liste EXATAMENTE 2 ou 3 ações cirúrgicas para os próximos dias. Cada ação deve ter:\n"
+            "- O QUE fazer (específico, não genérico)\n"
+            "- QUANTO economiza (estimativa em R$)\n"
+            "- IMPACTO no aporte (ex: \"isso eleva seu Savings Rate de 22% para 28%\")\n\n"
+            "Encerre com UMA frase motivacional curta e genuína — não clichê."
+        )
 
-            # --- Prompt Editável para Diagnóstico Inicial ---
-            default_prompt = (
-                "Você é um CFP® (Certified Financial Planner) com especialização em Behavioral Finance "
-                "e 20 anos de experiência com jovens profissionais de alta renda. Você combina rigor analítico "
-                "com empatia — nunca julga, mas nunca mente.\n\n"
-                "ESTILO DE COMUNICAÇÃO:\n"
-                "- Tom de conversa entre mentor e mentorado — direto, sem ser frio\n"
-                "- Use analogias do cotidiano para tornar conceitos financeiros tangíveis\n"
-                "- Números sempre em R$ formatados (R$ 1.234,56)\n"
-                "- Markdown limpo com emojis como marcadores visuais, sem exagero\n\n"
-                "ESTRUTURA DA ANÁLISE:\n\n"
-                "## 🩺 Diagnóstico Financeiro\n"
-                "Avalie a saúde do ciclo em UMA frase-resumo (tipo \"nota do médico\"). Depois detalhe:\n"
-                "- Relação Comprometido vs Teto: estourou? Por quanto? Se não, quão próximo ficou?\n"
-                "- Composição Fixos vs Variáveis: qual % da renda cada um consome? A proporção é sustentável "
-                "para quem quer construir patrimônio?\n"
-                "- Compare com a regra 50/30/20 adaptada ao perfil do cliente\n\n"
-                "## 🔍 Raio-X dos Gastos Variáveis\n"
-                "Analise como um detetive financeiro:\n"
-                "- Identifique os 3 maiores \"ralos\" (categorias que mais consumiram)\n"
-                "- Para cada um, classifique: 🟢 Necessário | 🟡 Questionável | 🔴 Inflação de Estilo de Vida\n"
-                "- Se houver limites por categoria, indique quais foram respeitados e quais foram ultrapassados\n"
-                "- Destaque um padrão comportamental (ex: \"gastos com delivery concentrados nos finais de semana "
-                "sugere compra emocional por cansaço\")\n\n"
-                "## 📊 Patrimônio: Estou Enriquecendo?\n"
-                "Esta é a seção mais importante — o cliente quer saber se está ficando mais rico:\n"
-                "- Savings Rate deste ciclo: X%. Benchmark: ≥30% excelente, 20-30% bom, <20% risco\n"
-                "- Aporte Real vs Meta: bateu? Se não, quanto faltou em R$ e em % da meta?\n"
-                "- Projeção de impacto: \"Se mantiver esse ritmo por 12 meses, isso representa R$ X a menos "
-                "no patrimônio vs o planejado\"\n\n"
-                "## 🏆 Metas de Longo Prazo\n"
-                "Se houver metas cadastradas, avalie:\n"
-                "- O aporte real deste ciclo é suficiente para atingi-las no prazo?\n"
-                "- Qual meta está mais em risco dado o ritmo atual?\n\n"
-                "## 🎯 Prescrição (Máx. 3 Ações)\n"
-                "Liste EXATAMENTE 2 ou 3 ações cirúrgicas para os próximos dias. Cada ação deve ter:\n"
-                "- O QUE fazer (específico, não genérico)\n"
-                "- QUANTO economiza (estimativa em R$)\n"
-                "- IMPACTO no aporte (ex: \"isso eleva seu Savings Rate de 22% para 28%\")\n\n"
-                "Encerre com UMA frase motivacional curta e genuína — não clichê."
+        with st.expander("⚙️ Personalizar Prompt do Consultor", expanded=False):
+            st.text_area(
+                "Edite as diretrizes de avaliação da IA:",
+                value=default_prompt,
+                height=300,
+                key="master_prompt_area"
             )
 
-            with st.expander("⚙️ Personalizar Prompt do Consultor", expanded=False):
-                st.text_area(
-                    "Edite as diretrizes de avaliação da IA:",
-                    value=default_prompt,
-                    height=300,
-                    key="master_prompt_area"
-                )
-
+        # ---- Botões: "Gerar" só aparece se Gemini estiver disponível; "Copiar" aparece sempre ----
+        if not gemini_client:
+            st.warning("⚠️ API do Gemini não configurada. Adicione GEMINI_API_KEY no secrets do Streamlit.")
+            gerar_clicked = False
+            copiar_clicked = st.button("📋 Copiar Prompt", use_container_width=True)
+        else:
+            st.caption("Gere um diagnóstico base ou converse livremente com a IA sobre o seu orçamento.")
             col_gerar, col_copiar = st.columns([3, 2])
             with col_gerar:
                 gerar_clicked = st.button("🪄 Gerar Diagnóstico Financeiro Completo", use_container_width=True)
             with col_copiar:
                 copiar_clicked = st.button("📋 Copiar Prompt", use_container_width=True)
 
-            if gerar_clicked or copiar_clicked:
-                df_c_i = pd.DataFrame(mensal_data.get(mes_insight, []))
-                df_o_i = pd.DataFrame(transacoes_data.get(mes_insight, []))
-                r = processar_mes(df_c_i, df_o_i, perfil_ativo, TETO_GASTOS, RECEITA_BASE, META_APORTE, CARTOES_ACEITOS, CARTOES_EXCLUIDOS)
-                current_master = st.session_state.get("master_prompt_area", default_prompt)
-                full_prompt = _build_full_prompt(
-                    current_master, mes_insight, r, RECEITA_BASE, META_APORTE,
-                    TETO_GASTOS, DIA_FECHAMENTO, category_budgets_data, goals_data, REGRAS_IA
-                )
+        # ---- Processamento unificado ----
+        if gerar_clicked or copiar_clicked:
+            df_c_i = pd.DataFrame(mensal_data.get(mes_insight, []))
+            df_o_i = pd.DataFrame(transacoes_data.get(mes_insight, []))
+            r = processar_mes(df_c_i, df_o_i, perfil_ativo, TETO_GASTOS, RECEITA_BASE, META_APORTE, CARTOES_ACEITOS, CARTOES_EXCLUIDOS)
+            current_master = st.session_state.get("master_prompt_area", default_prompt)
+            full_prompt = _build_full_prompt(
+                current_master, mes_insight, r, RECEITA_BASE, META_APORTE,
+                TETO_GASTOS, DIA_FECHAMENTO, category_budgets_data, goals_data, REGRAS_IA
+            )
 
-                if gerar_clicked:
-                    st.session_state[chat_key].append({"role": "user", "content": "*(Solicitou Geração do Diagnóstico Financeiro Completo)*"})
-                    with st.spinner("Elaborando diagnóstico minucioso..."):
-                        try:
-                            response = gemini_client.models.generate_content(
-                                model=GEMINI_MODEL,
-                                contents=full_prompt,
-                            )
-                            st.session_state[chat_key].append({"role": "assistant", "content": response.text})
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro na geração do relatório: {e}")
+            if gerar_clicked:
+                st.session_state[chat_key].append({"role": "user", "content": "*(Solicitou Geração do Diagnóstico Financeiro Completo)*"})
+                with st.spinner("Elaborando diagnóstico minucioso..."):
+                    try:
+                        response = gemini_client.models.generate_content(
+                            model=GEMINI_MODEL,
+                            contents=full_prompt,
+                        )
+                        st.session_state[chat_key].append({"role": "assistant", "content": response.text})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro na geração do relatório: {e}")
 
-                if copiar_clicked:
-                    st.session_state[f"claude_prompt_{mes_insight}"] = full_prompt
+            if copiar_clicked:
+                st.session_state[f"claude_prompt_{mes_insight}"] = full_prompt
 
-            claude_prompt_key = f"claude_prompt_{mes_insight}"
-            if claude_prompt_key in st.session_state:
-                st.caption("Clique no ícone de cópia no canto do bloco abaixo, depois cole no Claude (ou em qualquer chat de IA).")
-                st.code(st.session_state[claude_prompt_key], language=None)
+        claude_prompt_key = f"claude_prompt_{mes_insight}"
+        if claude_prompt_key in st.session_state:
+            st.caption("Clique no ícone de cópia no canto do bloco abaixo, depois cole no Claude (ou em qualquer chat de IA).")
+            st.code(st.session_state[claude_prompt_key], language=None)
 
+        # ---- Chatbot (apenas se Gemini disponível) ----
+        if gemini_client:
             st.markdown("---")
-            # --- Chatbot interativo abaixo do expander ---
-            # Exibe o histórico de mensagens
             for msg in st.session_state[chat_key]:
                 with st.chat_message(msg["role"]):
                     st.markdown(sanitize_ai_response(msg["content"]))
 
-            # Caixa de texto (chat input)
             if prompt_text := st.chat_input("Pergunte algo ao seu consultor financeiro..."):
-                # Adiciona a mensagem do usuário na tela
                 with st.chat_message("user"):
                     st.markdown(prompt_text)
                 st.session_state[chat_key].append({"role": "user", "content": prompt_text})
@@ -229,7 +229,6 @@ def render_page():
                     for cat, val in gastos_por_cat.items():
                         context += f"- {cat}: R$ {val:.2f}\n"
 
-                # Histórico no prompt
                 historico_llm = ""
                 for m in st.session_state[chat_key][:-1]:
                     historico_llm += f"{'Usuário' if m['role']=='user' else 'Consultor'}: {m['content']}\n"
@@ -252,4 +251,3 @@ def render_page():
                             st.error(f"Erro na IA: {e}")
 
     # ──────────────────────────────────────────────
-
