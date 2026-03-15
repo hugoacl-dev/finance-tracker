@@ -110,8 +110,20 @@ def inferir_ciclo(transacoes: list[dict], supabase: Client) -> str:
 
     if max_mes == 0:
         hoje = date.today()
-        target_mes = hoje.month
-        target_ano = hoje.year
+        try:
+            result = supabase.table("profiles").select("dia_fechamento").execute()
+            dia_fechamento = result.data[0]["dia_fechamento"] if result.data else 13
+        except Exception:
+            dia_fechamento = 13
+        if hoje.day > dia_fechamento:
+            target_mes = hoje.month + 1
+            target_ano = hoje.year
+            if target_mes > 12:
+                target_mes = 1
+                target_ano += 1
+        else:
+            target_mes = hoje.month
+            target_ano = hoje.year
     elif max_dia >= 16:
         target_mes = max_mes + 1
         target_ano = date.today().year
