@@ -1,14 +1,27 @@
+import subprocess
 import streamlit as st
 from views.styles import render_styles
 from views import tab_raiox, tab_historico, tab_importacao, tab_settings
 from core.config import DEFAULTS
 from services import get_data_service
 
+def _get_git_version() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True,
+            cwd="/home/user/finance-tracker"
+        ).stdout.strip() or "?"
+    except Exception:
+        return "?"
+
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
 # Perfil Ativo (Multi-Tenant)
 st.session_state["perfil_ativo"] = st.sidebar.radio("👤 Perfil Atual", ["Principal", "Dependente"], key="perfil_global")
 st.sidebar.markdown("---")
+_version = _get_git_version()
+st.sidebar.caption(f"versão `{_version}`")
 
 render_styles()
 
@@ -61,4 +74,4 @@ else:
 
 # Rodapé
 st.markdown("---")
-st.caption("Finance Tracker © 2026")
+st.caption(f"Finance Tracker © 2026 · `{_version}`")
