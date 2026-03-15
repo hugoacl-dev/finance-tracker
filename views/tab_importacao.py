@@ -12,6 +12,68 @@ def sanitize_ai_response(text: str) -> str:
     """
     return text.replace('$', r'\$')
 
+
+def _build_full_prompt(master_prompt, mes_insight, r, RECEITA_BASE, META_APORTE,
+                       TETO_GASTOS, DIA_FECHAMENTO, category_budgets_data, goals_data, REGRAS_IA):
+    """Monta o prompt completo (instruções + dados financeiros) para envio à IA."""
+    aporte_real    = r['aporte_real']
+    savings_rate   = (aporte_real / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
+    pct_fixos      = (r['total_fixos'] / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
+    pct_var        = (r['total_variaveis'] / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
+    delta_meta     = aporte_real - META_APORTE
+    dias_restantes = dias_ate_fechamento(DIA_FECHAMENTO)
+
+    context = f"\n\n--- DADOS FINANCEIROS DO CICLO ({mes_insight}) ---\n"
+    context += f"Receita Base: R$ {RECEITA_BASE:,.2f}\n"
+    context += f"Meta de Aporte: R$ {META_APORTE:,.2f}\n"
+    context += f"Teto de Gastos: R$ {TETO_GASTOS:,.2f}\n"
+    context += f"Dias até fechamento: {dias_restantes}\n\n"
+    context += "--- RESUMO DO CICLO ---\n"
+    context += f"Total Fixos: R$ {r['total_fixos']:,.2f} ({pct_fixos:.1f}% da receita)\n"
+    context += f"Total Variáveis: R$ {r['total_variaveis']:,.2f} ({pct_var:.1f}% da receita)\n"
+    context += f"Total Comprometido: R$ {r['total_comprometido']:,.2f}\n"
+    context += f"Saldo Restante do Teto: R$ {r['saldo_teto']:,.2f}\n"
+    context += f"Aporte Real Projetado: R$ {aporte_real:,.2f}\n"
+    context += f"Δ vs Meta: R$ {delta_meta:+,.2f}\n"
+    context += f"Savings Rate: {savings_rate:.1f}%\n"
+
+    if not r['df_ops'].empty:
+        gastos_por_cat = r['df_ops'].groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
+        context += "\n--- GASTOS VARIÁVEIS POR CATEGORIA ---\n"
+        for cat, val in gastos_por_cat.items():
+            pct_cat = (val / r['total_variaveis'] * 100) if r['total_variaveis'] > 0 else 0
+            context += f"- {cat}: R$ {val:,.2f} ({pct_cat:.1f}% dos variáveis)\n"
+
+        top5 = r['df_ops'].nlargest(5, "Valor")
+        context += "\nTop 5 Maiores Gastos Individuais:\n"
+        for _, row in top5.iterrows():
+            cat_str = row.get('Categoria', 'Outros')
+            context += f"- {row['Descricao']} ({cat_str}): R$ {row['Valor']:,.2f}\n"
+
+    if category_budgets_data:
+        context += "\n--- LIMITES POR CATEGORIA (ORÇAMENTO) ---\n"
+        if not r['df_ops'].empty:
+            gastos_cat = r['df_ops'].groupby("Categoria")["Valor"].sum()
+            for cat, limite in category_budgets_data.items():
+                gasto_real = float(gastos_cat.get(cat, 0))
+                status = "✅ dentro" if gasto_real <= limite else f"⚠️ ESTOURADO em R$ {gasto_real - limite:,.2f}"
+                context += f"- {cat}: limite R$ {limite:,.2f} | gasto R$ {gasto_real:,.2f} ({status})\n"
+        else:
+            for cat, limite in category_budgets_data.items():
+                context += f"- {cat}: limite R$ {limite:,.2f}\n"
+
+    if goals_data:
+        context += "\n--- METAS DE LONGO PRAZO ---\n"
+        for g in goals_data:
+            prazo = g.get('prazo_meses', 0)
+            valor_alvo = g.get('valor_alvo', 0)
+            aporte_necessario = valor_alvo / prazo if prazo > 0 else 0
+            context += f"- {g['titulo']}: R$ {valor_alvo:,.2f} em {prazo} meses (requer R$ {aporte_necessario:,.2f}/mês)\n"
+
+    rules_section = f"\n\nREGRAS PERSONALIZADAS DO USUÁRIO:\n{REGRAS_IA}" if REGRAS_IA else ""
+    return master_prompt + rules_section + context
+
+
 def render_page():
     cfg = st.session_state.get("cfg", {})
     transacoes_data = st.session_state.get("transacoes_data", {})
@@ -20,9 +82,9 @@ def render_page():
     category_budgets_data = st.session_state.get("category_budgets_data", {})
     perfil_ativo = st.session_state.get("perfil_ativo", "Principal")
     gemini_client = get_gemini_client()
-    
+
     all_meses = sorted(list(transacoes_data.keys()), key=mes_sort_key)
-    
+
     # Resolvendo dependencias de escopo global legado
     RECEITA_BASE = cfg.get("Receita_Base", 0)
     META_APORTE = cfg.get("Meta_Aporte", 0)
@@ -33,25 +95,25 @@ def render_page():
     CARTOES_ACEITOS   = cfg.get("Cartoes_Aceitos")
     CARTOES_EXCLUIDOS = cfg.get("Cartoes_Excluidos")
     REGRAS_IA = cfg.get("Regras_IA", "")
-    
+
     st.markdown('<p class="section-header">🤖 Consultoria Financeira com IA</p>', unsafe_allow_html=True)
-    
+
     if not all_meses:
         st.info("Nenhum mês cadastrado com dados para análise.")
     else:
         mes_insight = st.selectbox("Selecione o mês para a Consultoria", all_meses, index=len(all_meses) - 1, key="mes_insight_sel")
-        
+
         if not gemini_client:
             st.warning("⚠️ API do Gemini não configurada. Adicione GEMINI_API_KEY no secrets do Streamlit.")
         else:
             # ---- Feature 3: Chatbot Financeiro ----
             st.caption("Gere um diagnóstico base ou converse livremente com a IA sobre o seu orçamento.")
-            
+
             # Inicializa o histórico do chat
             chat_key = f"chat_history_{mes_insight}"
             if chat_key not in st.session_state:
                 st.session_state[chat_key] = []
-            
+
             # --- Prompt Editável para Diagnóstico Inicial ---
             default_prompt = (
                 "Você é um CFP® (Certified Financial Planner) com especialização em Behavioral Finance "
@@ -93,106 +155,66 @@ def render_page():
                 "- IMPACTO no aporte (ex: \"isso eleva seu Savings Rate de 22% para 28%\")\n\n"
                 "Encerre com UMA frase motivacional curta e genuína — não clichê."
             )
-    
+
             with st.expander("⚙️ Personalizar Prompt do Consultor", expanded=False):
-                master_prompt = st.text_area(
+                st.text_area(
                     "Edite as diretrizes de avaliação da IA:",
                     value=default_prompt,
                     height=300,
                     key="master_prompt_area"
                 )
-                
-            if st.button("🪄 Gerar Diagnóstico Financeiro Completo", use_container_width=True):
+
+            col_gerar, col_copiar = st.columns([3, 2])
+            with col_gerar:
+                gerar_clicked = st.button("🪄 Gerar Diagnóstico Financeiro Completo", use_container_width=True)
+            with col_copiar:
+                copiar_clicked = st.button("📋 Copiar Prompt", use_container_width=True)
+
+            if gerar_clicked or copiar_clicked:
                 df_c_i = pd.DataFrame(mensal_data.get(mes_insight, []))
                 df_o_i = pd.DataFrame(transacoes_data.get(mes_insight, []))
                 r = processar_mes(df_c_i, df_o_i, perfil_ativo, TETO_GASTOS, RECEITA_BASE, META_APORTE, CARTOES_ACEITOS, CARTOES_EXCLUIDOS)
+                current_master = st.session_state.get("master_prompt_area", default_prompt)
+                full_prompt = _build_full_prompt(
+                    current_master, mes_insight, r, RECEITA_BASE, META_APORTE,
+                    TETO_GASTOS, DIA_FECHAMENTO, category_budgets_data, goals_data, REGRAS_IA
+                )
 
-                # Métricas derivadas
-                aporte_real = r['aporte_real']
-                savings_rate = (aporte_real / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
-                pct_fixos = (r['total_fixos'] / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
-                pct_var = (r['total_variaveis'] / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
-                delta_meta = aporte_real - META_APORTE
-                dias_restantes = dias_ate_fechamento(DIA_FECHAMENTO)
+                if gerar_clicked:
+                    st.session_state[chat_key].append({"role": "user", "content": "*(Solicitou Geração do Diagnóstico Financeiro Completo)*"})
+                    with st.spinner("Elaborando diagnóstico minucioso..."):
+                        try:
+                            response = gemini_client.models.generate_content(
+                                model=GEMINI_MODEL,
+                                contents=full_prompt,
+                            )
+                            st.session_state[chat_key].append({"role": "assistant", "content": response.text})
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro na geração do relatório: {e}")
 
-                context = f"\n\n--- DADOS FINANCEIROS DO CICLO ({mes_insight}) ---\n"
-                context += f"Receita Base: R$ {RECEITA_BASE:,.2f}\n"
-                context += f"Meta de Aporte: R$ {META_APORTE:,.2f}\n"
-                context += f"Teto de Gastos: R$ {TETO_GASTOS:,.2f}\n"
-                context += f"Dias até fechamento: {dias_restantes}\n\n"
-                context += f"--- RESUMO DO CICLO ---\n"
-                context += f"Total Fixos: R$ {r['total_fixos']:,.2f} ({pct_fixos:.1f}% da receita)\n"
-                context += f"Total Variáveis: R$ {r['total_variaveis']:,.2f} ({pct_var:.1f}% da receita)\n"
-                context += f"Total Comprometido: R$ {r['total_comprometido']:,.2f}\n"
-                context += f"Saldo Restante do Teto: R$ {r['saldo_teto']:,.2f}\n"
-                context += f"Aporte Real Projetado: R$ {aporte_real:,.2f}\n"
-                context += f"Δ vs Meta: R$ {delta_meta:+,.2f}\n"
-                context += f"Savings Rate: {savings_rate:.1f}%\n"
-                
-                if not r['df_ops'].empty:
-                    gastos_por_cat = r['df_ops'].groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
-                    context += "\n--- GASTOS VARIÁVEIS POR CATEGORIA ---\n"
-                    for cat, val in gastos_por_cat.items():
-                        pct_cat = (val / r['total_variaveis'] * 100) if r['total_variaveis'] > 0 else 0
-                        context += f"- {cat}: R$ {val:,.2f} ({pct_cat:.1f}% dos variáveis)\n"
-                    
-                    top5 = r['df_ops'].nlargest(5, "Valor")
-                    context += "\nTop 5 Maiores Gastos Individuais:\n"
-                    for _, row in top5.iterrows():
-                        cat_str = row.get('Categoria', 'Outros')
-                        context += f"- {row['Descricao']} ({cat_str}): R$ {row['Valor']:,.2f}\n"
+                if copiar_clicked:
+                    st.session_state[f"claude_prompt_{mes_insight}"] = full_prompt
 
-                if category_budgets_data:
-                    context += "\n--- LIMITES POR CATEGORIA (ORÇAMENTO) ---\n"
-                    if not r['df_ops'].empty:
-                        gastos_cat = r['df_ops'].groupby("Categoria")["Valor"].sum()
-                        for cat, limite in category_budgets_data.items():
-                            gasto_real = float(gastos_cat.get(cat, 0))
-                            status = "✅ dentro" if gasto_real <= limite else f"⚠️ ESTOURADO em R$ {gasto_real - limite:,.2f}"
-                            context += f"- {cat}: limite R$ {limite:,.2f} | gasto R$ {gasto_real:,.2f} ({status})\n"
-                    else:
-                        for cat, limite in category_budgets_data.items():
-                            context += f"- {cat}: limite R$ {limite:,.2f}\n"
+            claude_prompt_key = f"claude_prompt_{mes_insight}"
+            if claude_prompt_key in st.session_state:
+                st.caption("Clique no ícone de cópia no canto do bloco abaixo, depois cole no Claude (ou em qualquer chat de IA).")
+                st.code(st.session_state[claude_prompt_key], language=None)
 
-                if goals_data:
-                    context += "\n--- METAS DE LONGO PRAZO ---\n"
-                    for g in goals_data:
-                        prazo = g.get('prazo_meses', 0)
-                        valor_alvo = g.get('valor_alvo', 0)
-                        aporte_necessario = valor_alvo / prazo if prazo > 0 else 0
-                        context += f"- {g['titulo']}: R$ {valor_alvo:,.2f} em {prazo} meses (requer R$ {aporte_necessario:,.2f}/mês)\n"
-
-                rules_section = f"\n\nREGRAS PERSONALIZADAS DO USUÁRIO:\n{REGRAS_IA}" if REGRAS_IA else ""
-                full_analysis_prompt = master_prompt + rules_section + context
-                
-                # Adiciona ao chat a indicação de que o usuário solicitou o relatório longo
-                st.session_state[chat_key].append({"role": "user", "content": "*(Solicitou Geração do Diagnóstico Financeiro Completo)*"})
-                
-                with st.spinner("Elaborando diagnóstico minucioso..."):
-                    try:
-                        response = gemini_client.models.generate_content(
-                            model=GEMINI_MODEL,
-                            contents=full_analysis_prompt,
-                        )
-                        st.session_state[chat_key].append({"role": "assistant", "content": response.text})
-                        st.rerun() # Atualiza a tela para exibir a resposta no chat
-                    except Exception as e:
-                        st.error(f"Erro na geração do relatório: {e}")
-            
             st.markdown("---")
             # --- Chatbot interativo abaixo do expander ---
             # Exibe o histórico de mensagens
             for msg in st.session_state[chat_key]:
                 with st.chat_message(msg["role"]):
                     st.markdown(sanitize_ai_response(msg["content"]))
-            
+
             # Caixa de texto (chat input)
             if prompt_text := st.chat_input("Pergunte algo ao seu consultor financeiro..."):
                 # Adiciona a mensagem do usuário na tela
                 with st.chat_message("user"):
                     st.markdown(prompt_text)
                 st.session_state[chat_key].append({"role": "user", "content": prompt_text})
-                
+
                 # Monta o contexto para a LLM
                 df_c_i = pd.DataFrame(mensal_data.get(mes_insight, []))
                 df_o_i = pd.DataFrame(transacoes_data.get(mes_insight, []))
@@ -206,17 +228,17 @@ def render_page():
                     context += "Gastos Variáveis por Categoria:\n"
                     for cat, val in gastos_por_cat.items():
                         context += f"- {cat}: R$ {val:.2f}\n"
-    
+
                 # Histórico no prompt
                 historico_llm = ""
                 for m in st.session_state[chat_key][:-1]:
                     historico_llm += f"{'Usuário' if m['role']=='user' else 'Consultor'}: {m['content']}\n"
-                
+
                 full_prompt = f"Você é um consultor financeiro incisivo e direto do projeto 'Finance Tracker'.\n"
                 full_prompt += f"DADOS ATUAIS DO USUÁRIO:\n{context}\n\n"
                 full_prompt += f"HISTÓRICO DA CONVERSA:\n{historico_llm}\n"
                 full_prompt += f"Usuário: {prompt_text}\n\nResponda diretamente (use Markdown, negritos e emojis):"
-                
+
                 with st.chat_message("assistant"):
                     with st.spinner("Analisando..."):
                         try:
@@ -228,6 +250,6 @@ def render_page():
                             st.session_state[chat_key].append({"role": "assistant", "content": response.text})
                         except Exception as e:
                             st.error(f"Erro na IA: {e}")
-    
+
     # ──────────────────────────────────────────────
-    
+
