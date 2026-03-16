@@ -10,7 +10,7 @@ import json
 import math
 import difflib
 import unicodedata
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import logging
@@ -485,6 +485,10 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
 
             supabase.table("transacoes").insert(records).execute()
             logger.info(f"Inseridas {len(records)} transações para {perfil}")
+            supabase.table("profiles").update(
+                {"ultima_importacao": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", str(pid)).execute()
+            logger.info(f"ultima_importacao atualizada para {perfil}")
 
         logger.info("Processamento concluído com sucesso")
 
