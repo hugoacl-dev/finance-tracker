@@ -138,13 +138,22 @@ def render_onboarding() -> bool:
         if "onboarding_fixos" not in st.session_state:
             st.session_state["onboarding_fixos"] = []
 
+        TIPO_LABELS = {
+            "Nao_Cartao": "Não Cartão (débito/PIX)",
+            "Cartao": "Cartão de Crédito",
+            "Extra": "Extra / Eventual",
+        }
+        TIPO_OPTIONS = list(TIPO_LABELS.keys())
+        TIPO_DISPLAY = list(TIPO_LABELS.values())
+
         # Formulário para adicionar
         with st.form("add_fixo_form", clear_on_submit=True):
             f_cols = st.columns([3, 2, 2])
             with f_cols[0]:
                 desc = st.text_input("Descrição", placeholder="Ex: Aluguel")
             with f_cols[1]:
-                tipo = st.selectbox("Tipo", ["Nao_Cartao", "Cartao", "Extra"])
+                tipo_idx = st.selectbox("Tipo", range(len(TIPO_OPTIONS)),
+                                        format_func=lambda i: TIPO_DISPLAY[i])
             with f_cols[2]:
                 valor = st.number_input("Valor (R$)", min_value=0.0, step=50.0, format="%.2f")
 
@@ -152,7 +161,7 @@ def render_onboarding() -> bool:
                 if desc and valor > 0:
                     st.session_state["onboarding_fixos"].append({
                         "Descricao_Fatura": desc,
-                        "Tipo": tipo,
+                        "Tipo": TIPO_OPTIONS[tipo_idx],
                         "Valor": valor,
                     })
 
@@ -161,7 +170,13 @@ def render_onboarding() -> bool:
             total = sum(f["Valor"] for f in st.session_state["onboarding_fixos"])
             st.markdown(f"**{len(st.session_state['onboarding_fixos'])} gastos fixos** · Total: **R$ {total:,.2f}**")
             for i, f in enumerate(st.session_state["onboarding_fixos"]):
-                st.text(f"  {f['Descricao_Fatura']:30s}  {f['Tipo']:15s}  R$ {f['Valor']:>10,.2f}")
+                row_cols = st.columns([4, 3, 2, 1])
+                row_cols[0].text(f["Descricao_Fatura"])
+                row_cols[1].text(TIPO_LABELS.get(f["Tipo"], f["Tipo"]))
+                row_cols[2].text(f"R$ {f['Valor']:,.2f}")
+                if row_cols[3].button("✕", key=f"rm_fixo_{i}"):
+                    st.session_state["onboarding_fixos"].pop(i)
+                    st.rerun()
 
         col_back, col_next = st.columns(2)
         with col_back:
