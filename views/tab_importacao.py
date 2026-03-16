@@ -207,7 +207,7 @@ def render_page():
 
         claude_prompt_key = f"claude_prompt_{mes_insight}"
         if claude_prompt_key in st.session_state:
-            st.caption("Clique no ícone de cópia no canto do bloco abaixo, depois cole no Claude (ou em qualquer chat de IA).")
+            st.caption("Clique no ícone de cópia no canto do bloco abaixo, depois cole em qualquer assistente de IA externo (ex: Claude, ChatGPT) para obter uma análise adicional.")
             st.code(st.session_state[claude_prompt_key], language=None)
 
         # ---- Chatbot (apenas se Gemini disponível) ----

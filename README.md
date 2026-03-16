@@ -63,7 +63,7 @@ tests/
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/<your-user>/finance-tracker.git
+git clone https://github.com/your-user/finance-tracker.git
 cd finance-tracker
 python -m venv venv
 source venv/bin/activate
@@ -83,17 +83,43 @@ cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 
 Create the following tables in your Supabase project:
 
-- **profiles** — User profiles with configuration (Receita_Base, Meta_Aporte, Teto_Gastos, etc.)
-- **mensal_data** — Monthly fixed expenses
+- **profiles** — User profiles with configuration (Receita_Base, Meta_Aporte, Teto_Gastos, Dia_Fechamento, etc.)
+- **mensal_data** — Monthly fixed expenses per cycle
 - **transacoes_data** — Variable transactions per cycle
+- **goals** — Long-term savings goals (titulo, valor_alvo, prazo_meses, acumulado)
+- **category_budgets** — Per-category spending limits
 
-Run the migration scripts in `scripts/` for additional tables (goals, category budgets).
+Run the migration scripts in `scripts/` to create all tables with the correct schema.
 
 ### 4. Run locally
 
 ```bash
 streamlit run app.py
 ```
+
+### Deploy on Streamlit Cloud (optional)
+
+1. Push your repository to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io) and connect your repo
+3. Set the main file to `app.py`
+4. Add secrets in **Settings → Secrets** (same keys as `.streamlit/secrets.toml`):
+   ```toml
+   SUPABASE_URL = "https://your-project.supabase.co"
+   SUPABASE_KEY = "your-anon-key"
+   GEMINI_API_KEY = "your-gemini-api-key"
+   ```
+
+### Advanced Configuration
+
+The following optional fields can be set in the `profiles` table or via the Settings tab:
+
+| Field | Description |
+|-------|-------------|
+| `Cartoes_Aceitos` | Comma-separated list of card suffixes to include (e.g. `"1234,5678"`) |
+| `Cartoes_Excluidos` | Comma-separated list of card suffixes to exclude |
+| `Regras_IA` | Custom rules injected into the AI financial consultant prompt |
+| `Gemini_Model` | Gemini model for chat/analysis (default: `gemini-2.5-flash`) |
+| `Gemini_Vision_Model` | Gemini model for OCR image import (default: `gemini-2.5-flash`) |
 
 ### API (optional)
 
