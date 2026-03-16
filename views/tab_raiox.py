@@ -210,9 +210,13 @@ def render_page():
             # dias restantes. Se restam 'dias' e o ciclo tem ~30 dias:
             _total_cycle = 30  # aproximação padrão de 1 ciclo de fatura
             _days_elapsed = max(1, _total_cycle - dias + 1)
-            _burn = r["total_variaveis"] / _days_elapsed if _days_elapsed > 0 else 0
-            _proj_var = _burn * _total_cycle
-            _proj_total = r["total_fixos"] + _proj_var
+            _MIN_DAYS = 7
+            if _days_elapsed >= _MIN_DAYS:
+                _burn = r["total_variaveis"] / _days_elapsed
+                _proj_total = r["total_fixos"] + (_burn * _total_cycle)
+                _forecast_str = f"🔥 Burn rate: R$ {_burn:,.2f}/dia &nbsp;·&nbsp; Projeção fechamento: R$ {_proj_total:,.2f}"
+            else:
+                _forecast_str = f"🔥 Burn rate: -- &nbsp;·&nbsp; Projeção fechamento: -- (disponível após {_MIN_DAYS} dias)"
 
             limit_color = "#00e676" if pct_limite >= 50 else ("#ffd600" if pct_limite >= 30 else "#ff1744")
             danger_cls = " danger" if pct_limite < 30 else ""
@@ -221,7 +225,7 @@ def render_page():
                 <div class="label">Limite diário de sobrevivência</div>
                 <div class="value" style="color:{limit_color}">R$ {limite_diario:,.2f}</div>
                 <div class="sub">por dia nos próximos {dias} dias · Ciclo: {mes_sel}</div>
-                <div class="forecast">🔥 Burn rate: R$ {_burn:,.2f}/dia &nbsp;·&nbsp; Projeção fechamento: R$ {_proj_total:,.2f}</div>
+                <div class="forecast">{_forecast_str}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -284,17 +288,54 @@ def render_page():
         """, unsafe_allow_html=True)
 
         with st.expander("📊 Detalhes do Score Financeiro", expanded=False):
+            _PILAR_INFO = {
+                "Savings Rate": {
+                    "descricao": "Percentual da receita que sobra após todos os gastos.",
+                    "valor_atual": f"{savings_rate:.1f}%",
+                    "criterios": "≥ 30% → 30pts | ≥ 20% → 20pts | ≥ 10% → 12pts | < 10% → 5pts",
+                },
+                "Aderência ao Teto": {
+                    "descricao": "Quanto do teto de gastos configurado foi utilizado.",
+                    "valor_atual": f"{r['pct_teto']:.1f}%",
+                    "criterios": "≤ 85% → 25pts | ≤ 95% → 18pts | ≤ 100% → 10pts | > 100% → 3pts",
+                },
+                "Meta de Aporte": {
+                    "descricao": "Se o aporte real atingiu a meta configurada.",
+                    "valor_atual": "✅ Batida" if not r["meta_ameacada"] else "❌ Não batida",
+                    "criterios": "Meta batida → 20pts | Teto ≤ 105% → 12pts | Acima → 5pts",
+                },
+                "Consistência": {
+                    "descricao": "Estabilidade do Savings Rate nos últimos 6 meses (desvio padrão).",
+                    "valor_atual": f"σ = {std_sr:.1f}pp",
+                    "criterios": "σ < 5pp → 15pts | σ < 10pp → 10pts | σ ≥ 10pp → 5pts",
+                },
+                "Organização": {
+                    "descricao": "Percentual de transações sem categoria definida.",
+                    "valor_atual": f"{pct_nao_class:.1f}% sem categoria",
+                    "criterios": "< 5% → 10pts | < 15% → 6pts | ≥ 15% → 2pts",
+                },
+            }
             for pilar, pts in _sc["pilares"].items():
                 max_pts = {"Savings Rate": 30, "Aderência ao Teto": 25, "Meta de Aporte": 20, "Consistência": 15, "Organização": 10}
                 mx = max_pts.get(pilar, 10)
                 pct_pilar = (pts / mx) * 100
                 bar_c = "linear-gradient(90deg, #00c9ff, #92fe9d)" if pct_pilar >= 70 else ("linear-gradient(90deg, #f7971e, #ffd200)" if pct_pilar >= 50 else "linear-gradient(90deg, #ff416c, #ff4b2b)")
-                st.markdown(f"""
-                <div class="cat-gauge-label"><span>{pilar}</span><span>{pts}/{mx}</span></div>
-                <div class="progress-outer" style="height:16px; margin-bottom:.8rem;">
-                    <div class="progress-inner" style="width:{pct_pilar:.0f}%; background:{bar_c}; font-size:.7rem;"></div>
-                </div>
-                """, unsafe_allow_html=True)
+                col_label, col_btn = st.columns([11, 1])
+                with col_label:
+                    st.markdown(f"""
+                    <div class="cat-gauge-label"><span>{pilar}</span><span>{pts}/{mx}</span></div>
+                    <div class="progress-outer" style="height:16px; margin-bottom:.8rem;">
+                        <div class="progress-inner" style="width:{pct_pilar:.0f}%; background:{bar_c}; font-size:.7rem;"></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_btn:
+                    info = _PILAR_INFO.get(pilar, {})
+                    with st.popover("ℹ️"):
+                        st.markdown(f"**{pilar}**")
+                        st.caption(info.get("descricao", ""))
+                        st.markdown(f"**Valor atual:** {info.get('valor_atual', '--')}")
+                        st.markdown(f"**Critérios:** {info.get('criterios', '--')}")
+                        st.markdown(f"**Pontuação obtida:** {pts}/{mx} pts")
 
         # ── Calculadora de Independência Financeira ──
         if len(sr_history) >= 2:
