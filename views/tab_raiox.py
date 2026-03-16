@@ -5,7 +5,6 @@ import plotly.express as px
 from services.data_engine import (
     processar_mes,
     calcular_score_financeiro, detectar_parcelamento, detectar_anomalia,
-    calcular_independencia_financeira,
 )
 from core.utils import mes_sort_key
 
@@ -336,23 +335,6 @@ def render_page():
                         st.markdown(f"**Valor atual:** {info.get('valor_atual', '--')}")
                         st.markdown(f"**Critérios:** {info.get('criterios', '--')}")
                         st.markdown(f"**Pontuação obtida:** {pts}/{mx} pts")
-
-        # ── Calculadora de Independência Financeira ──
-        if len(sr_history) >= 2:
-            _fire = calcular_independencia_financeira(
-                custo_mensal=r["total_comprometido"],
-                aporte_mensal=max(0, r["aporte_real"]),
-                patrimonio_atual=0,
-                rendimento_anual=0.08,
-            )
-            if _fire["meses"] != float("inf"):
-                st.markdown(f"""
-                <div style="text-align:center; opacity:.75; font-size:.85rem; margin-bottom:1.5rem;">
-                    🏝️ Com aporte de R$ {r["aporte_real"]:,.0f}/mês e rendimento de 8% a.a.,
-                    independência financeira em <strong>{_fire["label"]}</strong>
-                    (patrimônio necessário: R$ {_fire["patrimonio_necessario"]:,.0f})
-                </div>
-                """, unsafe_allow_html=True)
 
         # ---- Barra de progresso ----
         st.markdown('<p class="section-header">Consumo do Teto</p>', unsafe_allow_html=True)
