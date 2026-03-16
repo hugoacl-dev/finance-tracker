@@ -12,7 +12,6 @@ Track expenses, analyze spending patterns, and get AI-powered financial insights
 - **OCR Import** — Extract transactions from credit card statement images using Gemini Vision
 - **Multi-profile** — Support for multiple card holders (Principal / Dependente) with card-based routing
 - **Mobile Import** — FastAPI backend (`api-fatura/`) for importing statement photos directly from iPhone Shortcuts
-- **Financial Independence Calculator** — FIRE projections based on current savings rate
 
 ## Architecture
 
