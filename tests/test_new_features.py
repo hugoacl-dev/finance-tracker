@@ -1,5 +1,5 @@
 """
-Testes para as novas funções: score, parcelamento, anomalia, FIRE,
+Testes para as novas funções: score, parcelamento, anomalia,
 forecasting, clustering, sazonalidade.
 """
 import pytest
@@ -7,7 +7,6 @@ from services.data_engine import (
     calcular_score_financeiro,
     detectar_parcelamento,
     detectar_anomalia,
-    calcular_independencia_financeira,
 )
 from services.forecasting import (
     prever_gastos_categoria,
@@ -99,37 +98,6 @@ class TestDetectarAnomalia:
         # Fallback: valor > media * 2
         assert detectar_anomalia(valor=300, media=100, std=0) is True
         assert detectar_anomalia(valor=150, media=100, std=0) is False
-
-
-# ═══════════════════════════════════════
-# Independência Financeira (FIRE)
-# ═══════════════════════════════════════
-class TestFIRE:
-    def test_calculo_basico(self):
-        r = calcular_independencia_financeira(
-            custo_mensal=5000, aporte_mensal=5000,
-            patrimonio_atual=0, rendimento_anual=0.08,
-        )
-        assert r["patrimonio_necessario"] == 1500000
-        assert r["meses"] > 0
-        assert r["anos"] > 0
-        assert isinstance(r["label"], str)
-
-    def test_sem_aporte(self):
-        r = calcular_independencia_financeira(
-            custo_mensal=5000, aporte_mensal=0,
-        )
-        assert r["meses"] == float("inf")
-        assert r["label"] == "Impossível sem aporte"
-
-    def test_ja_tem_patrimonio(self):
-        r_sem = calcular_independencia_financeira(
-            custo_mensal=5000, aporte_mensal=5000, patrimonio_atual=0,
-        )
-        r_com = calcular_independencia_financeira(
-            custo_mensal=5000, aporte_mensal=5000, patrimonio_atual=500000,
-        )
-        assert r_com["meses"] < r_sem["meses"]
 
 
 # ═══════════════════════════════════════
