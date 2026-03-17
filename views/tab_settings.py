@@ -30,8 +30,9 @@ def render_page():
     meses_trans = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())))
     
     if meses_trans:
+        if "trans_mes_edit" not in st.session_state or st.session_state["trans_mes_edit"] not in meses_trans:
+            st.session_state["trans_mes_edit"] = meses_trans[-1]
         mes_trans = st.selectbox("Selecione o mês desejado", meses_trans,
-                                 index=len(meses_trans) - 1,
                                  key="trans_mes_edit")
     
         # ── Importação em Lote ──
@@ -533,14 +534,13 @@ def render_page():
                     with st.spinner(f"Classificando com IA..."):
                         todas_trans_class = transacoes_data.get(mes_trans, [])
                         if todas_trans_class:
-                            _PALAVRAS_CREDITO = re.compile(
-                                r'\b(ESTORNO|CREDITO|DEVOLUCAO|DEVOL|IOF|CASHBACK|REEMBOLSO|CANCELAMENTO|CANCELAM)\b',
-                                re.IGNORECASE
-                            )
+                            _KW_CREDITO = {"IOF", "ESTORNO", "DEVOLUCAO", "DEVOL", "CASHBACK",
+                                           "REEMBOLSO", "CANCELAMENTO", "CANCELAM", "CREDITO"}
                             # Créditos por Tipo ou por palavra-chave recebem categoria fixa
+                            # normalize_text remove acentos e espaços — ex: "CRÉDITO" → "CREDITO"
                             for t in todas_trans_class:
-                                desc = str(t.get("Descricao", ""))
-                                if t.get("Tipo") == "credito" or _PALAVRAS_CREDITO.search(desc):
+                                desc_norm = normalize_text(str(t.get("Descricao", "")))
+                                if t.get("Tipo") == "credito" or any(kw in desc_norm for kw in _KW_CREDITO):
                                     t["Tipo"] = "credito"
                                     t["Categoria"] = "Crédito/Estorno"
 
