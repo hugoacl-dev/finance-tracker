@@ -532,31 +532,38 @@ def render_page():
                     with st.spinner(f"Classificando com IA..."):
                         todas_trans_class = transacoes_data.get(mes_trans, [])
                         if todas_trans_class:
+                            # Créditos recebem categoria fixa; apenas débitos vão para a IA
+                            for t in todas_trans_class:
+                                if t.get("Tipo") == "credito":
+                                    t["Categoria"] = "Crédito/Estorno"
+                            debitos_class = [(i, t) for i, t in enumerate(todas_trans_class) if t.get("Tipo") != "credito"]
+
                             prompt = "Classifique cada transação abaixo em uma das categorias: Alimentação, Supermercado, Transporte, Saúde, Assinatura, Lazer, Pet, Compras, Combustível, Casa, Outros. Responda APENAS em JSON no formato: [{\"idx\": <indice_inteiro>, \"categoria\": \"<categoria>\"}]\n\n"
-                            
+
                             regras_ia = cfg_raw.get("Regras_IA", "").strip() if cfg_raw else ""
                             if regras_ia:
                                 prompt += f"Regras Específicas do Usuário (Siga estritamente):\n{regras_ia}\n\n"
-                                
+
                             prompt += "Transações:\n"
-                            for i, t in enumerate(todas_trans_class):
-                                prompt += f"{i}. {t.get('Descricao', '')} - R$ {t.get('Valor', 0)}\n"
-                            
+                            for seq, (i, t) in enumerate(debitos_class):
+                                prompt += f"{seq}. {t.get('Descricao', '')} - R$ {t.get('Valor', 0)}\n"
+
                             try:
-                                response = gemini_client.models.generate_content(
-                                    model=GEMINI_MODEL,
-                                    contents=prompt,
-                                )
-                                raw_json = response.text.strip()
-                                if raw_json.startswith("```json"):
-                                    raw_json = raw_json[7:-3]
-                                elif raw_json.startswith("```"):
-                                    raw_json = raw_json[3:-3]
-                                classfs = json.loads(raw_json)
-                                cmap = {c.get("idx"): c.get("categoria", "Outros") for c in classfs}
-                                
-                                for i, t in enumerate(todas_trans_class):
-                                    t["Categoria"] = cmap.get(i, "Outros")
+                                if debitos_class:
+                                    response = gemini_client.models.generate_content(
+                                        model=GEMINI_MODEL,
+                                        contents=prompt,
+                                    )
+                                    raw_json = response.text.strip()
+                                    if raw_json.startswith("```json"):
+                                        raw_json = raw_json[7:-3]
+                                    elif raw_json.startswith("```"):
+                                        raw_json = raw_json[3:-3]
+                                    classfs = json.loads(raw_json)
+                                    cmap = {c.get("idx"): c.get("categoria", "Outros") for c in classfs}
+
+                                    for seq, (i, t) in enumerate(debitos_class):
+                                        t["Categoria"] = cmap.get(seq, "Outros")
                                     
                                 transacoes_data[mes_trans] = todas_trans_class
                                 data_service.save_transacoes(perfil_ativo, mes_trans, todas_trans_class)
