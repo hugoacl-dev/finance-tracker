@@ -383,6 +383,19 @@ Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra,
 ]"""
 
 
+_KEYWORDS_CREDITO = {"ESTORNO", "CREDITO", "CRÉDITO", "IOF ZERO", "DEVOLUCAO", "DEVOLUÇÃO"}
+
+
+def _corrigir_tipo_por_descricao(transacoes: list[dict]) -> list[dict]:
+    """Corrige deterministicamente o Tipo para 'credito' quando a descrição contém palavras-chave
+    conhecidas de crédito/estorno, evitando erros do modelo OCR em faturas sem destaque visual."""
+    for t in transacoes:
+        desc_upper = str(t.get("Descricao", "")).upper()
+        if any(kw in desc_upper for kw in _KEYWORDS_CREDITO):
+            t["Tipo"] = "credito"
+    return transacoes
+
+
 def ocr_imagem(client: genai.Client, model: str, image_bytes: bytes, mime_type: str) -> list[dict]:
     img = Image.open(io.BytesIO(image_bytes))
     response = client.models.generate_content(
@@ -394,7 +407,8 @@ def ocr_imagem(client: genai.Client, model: str, image_bytes: bytes, mime_type: 
         raw = raw[7:-3]
     elif raw.startswith("```"):
         raw = raw[3:-3]
-    return json.loads(raw.strip())
+    transacoes = json.loads(raw.strip())
+    return _corrigir_tipo_por_descricao(transacoes)
 
 
 # ── Gemini: Classificação ──
