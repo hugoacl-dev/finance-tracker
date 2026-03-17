@@ -27,11 +27,16 @@ def render_page():
     DIA_FECHAMENTO = int(cfg.get("Dia_Fechamento", 13))
     GEMINI_MODEL = cfg.get("Gemini_Model", "gemini-2.5-flash")
     GEMINI_VISION_MODEL = cfg.get("Gemini_Vision_Model", "gemini-3.1-pro-preview")
-    meses_trans = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())))
-    
+    meses_trans = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())), key=mes_sort_key)
+
     if meses_trans:
-        if "trans_mes_edit" not in st.session_state or st.session_state["trans_mes_edit"] not in meses_trans:
-            st.session_state["trans_mes_edit"] = meses_trans[-1]
+        # Sempre aponta para o mês mais recente quando um novo mês aparece.
+        # _cfg_latest_mes rastreia o último máximo visto; quando muda (novo mês
+        # adicionado ou primeira carga), o selectbox é forçado ao mais recente.
+        latest_mes = meses_trans[-1]
+        if st.session_state.get("_cfg_latest_mes") != latest_mes:
+            st.session_state["trans_mes_edit"] = latest_mes
+            st.session_state["_cfg_latest_mes"] = latest_mes
         mes_trans = st.selectbox("Selecione o mês desejado", meses_trans,
                                  key="trans_mes_edit")
     
@@ -277,18 +282,20 @@ def render_page():
     
                                     for t in trans_img:
                                         if 'dest_profile' not in t: continue
-                                        
+
                                         c = str(t.get("Cartao", "")).strip()
                                         c = c.zfill(4) if c.isdigit() else c
                                         d = str(t.get("Descricao", "")).strip()
                                         v = float(t.get("Valor", 0))
                                         dest = t['dest_profile']
                                         tit = t.get("Titular", "Sistema")
-                                        
+                                        # Preserva Tipo detectado pelo OCR (credito/debito)
+                                        tipo = t.get("Tipo", "debito")
+
                                         if t['is_dupe']:
-                                            ignorados.append({"Descricao": d, "Valor": v, "Cartao": c, "Perfil": dest, "Titular": tit})
+                                            ignorados.append({"Descricao": d, "Valor": v, "Cartao": c, "Perfil": dest, "Titular": tit, "Tipo": tipo})
                                         else:
-                                            novos.append({"Descricao": d, "Valor": v, "Cartao": c, "Perfil": dest, "Titular": tit})
+                                            novos.append({"Descricao": d, "Valor": v, "Cartao": c, "Perfil": dest, "Titular": tit, "Tipo": tipo})
                                             
                                     if novos:      st.session_state["lote_pendente"] = novos
                                     if ignorados:  st.session_state["lote_ignorados"] = ignorados
@@ -344,7 +351,8 @@ def render_page():
                             elif raw_json.startswith("```"):
                                 raw_json = raw_json[3:-3]
                             classfs = json.loads(raw_json)
-                            cmap = {c.get("idx"): c.get("categoria", "Outros") for c in classfs}
+                            # idx pode vir como int ou string do LLM — converte para int
+                            cmap = {int(c.get("idx", -1)): c.get("categoria", "Outros") for c in classfs}
                             for i, t in enumerate(pendentes):
                                 t["Categoria"] = cmap.get(i, "Outros")
                         except Exception as e:
@@ -587,7 +595,8 @@ def render_page():
                                     elif raw_json.startswith("```"):
                                         raw_json = raw_json[3:-3]
                                     classfs = json.loads(raw_json)
-                                    cmap = {c.get("idx"): c.get("categoria", "Outros") for c in classfs}
+                                    # idx pode vir como int ou string do LLM — converte para int
+                                    cmap = {int(c.get("idx", -1)): c.get("categoria", "Outros") for c in classfs}
 
                                     for seq, (i, t) in enumerate(debitos_class):
                                         t["Categoria"] = cmap.get(seq, "Outros")
