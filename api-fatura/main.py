@@ -242,6 +242,33 @@ def rotear_perfil(titular: str) -> str:
     return "Principal"
 
 
+def _match_cross_imagem(t: dict, vistas: list[dict]) -> bool:
+    """Verifica se a transação t é duplicata de alguma em vistas (cross-image).
+
+    Critério conservador: mesmo cartão + mesmo tipo + descrição >= 80% similar + valor exato.
+    Não usa tolerância de valor para não eliminar transações legítimas com valores próximos.
+    """
+    c = str(t.get("Cartao", "")).strip()
+    c = c.zfill(4) if c.isdigit() else c
+    d = normalize_text(str(t.get("Descricao", "")))
+    v = float(t.get("Valor", 0))
+    tipo = t.get("Tipo", "debito")
+
+    for s in vistas:
+        s_c = str(s.get("Cartao", "")).strip()
+        s_c = s_c.zfill(4) if s_c.isdigit() else s_c
+        if c != s_c:
+            continue
+        if tipo != s.get("Tipo", "debito"):
+            continue
+        s_d = normalize_text(str(s.get("Descricao", "")))
+        s_v = float(s.get("Valor", 0))
+        sim = difflib.SequenceMatcher(None, d, s_d).ratio()
+        if sim >= 0.80 and abs(v - s_v) == 0:
+            return True
+    return False
+
+
 def dedup_transacoes(
     novas: list[dict], existentes_por_perfil: dict[str, list[dict]]
 ) -> tuple[list[dict], list[dict]]:
@@ -280,18 +307,19 @@ def dedup_transacoes(
                     None, normalize_text(d), normalize_text(e_d)
                 ).ratio()
                 price_diff = abs(v - e_v)
-                if match_fn(similarity, price_diff):
+                if match_fn(similarity, price_diff, v):
                     t["is_dupe"] = True
                     bufs[prof].pop(idx)
                     break
 
     # Pass 1: match exato
-    pass_dedup(novas, buffers, lambda s, p: s == 1.0 and p == 0)
+    pass_dedup(novas, buffers, lambda s, p, v: s == 1.0 and p == 0)
     # Pass 2: descricao >= 80% similar, valor exato
-    pass_dedup(novas, buffers, lambda s, p: s >= 0.80 and p == 0)
-    # Pass 3: descricao >= 90% similar, valor exato (sem tolerância: evita false-positive
-    # em créditos pequenos com descrição idêntica, ex: múltiplos IOF com valores distintos)
-    pass_dedup(novas, buffers, lambda s, p: s >= 0.90 and p == 0)
+    pass_dedup(novas, buffers, lambda s, p, v: s >= 0.80 and p == 0)
+    # Pass 3: descricao >= 90% similar, tolerância dependente do valor
+    #   > R$5 → até ±0,50 (absorve erros de OCR em decimais de valores maiores)
+    #   ≤ R$5 → exato (evita false-positive em pequenos créditos como IOF)
+    pass_dedup(novas, buffers, lambda s, p, v: s >= 0.90 and p <= (0.50 if v > 5.0 else 0.0))
 
     novos = []
     ignorados = []
@@ -414,13 +442,19 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
         gemini_model, gemini_vision_model = get_gemini_models(supabase, "Principal")
         regras_ia = get_regras_ia(supabase, "Principal")
 
-        # 1. OCR de todas as imagens
+        # 1. OCR de todas as imagens (com dedup cross-imagem)
+        # Cada imagem é deduplicada contra as transações já vistas nas imagens anteriores
+        # do mesmo upload, evitando duplicatas por sobreposição de fotos de páginas adjacentes.
         todas_transacoes = []
         for image_bytes, mime in images_data:
             try:
                 extraidas = ocr_imagem(gemini, gemini_vision_model, image_bytes, mime)
-                todas_transacoes.extend(extraidas)
-                logger.info(f"OCR extraiu {len(extraidas)} transações de uma imagem")
+                novas_imagem = [t for t in extraidas if not _match_cross_imagem(t, todas_transacoes)]
+                removidos = len(extraidas) - len(novas_imagem)
+                if removidos:
+                    logger.info(f"Dedup cross-imagem: {removidos} transação(ões) removida(s)")
+                todas_transacoes.extend(novas_imagem)
+                logger.info(f"OCR extraiu {len(novas_imagem)} transações de uma imagem ({len(extraidas)} brutas)")
             except Exception as e:
                 logger.error(f"Erro OCR: {e}")
 

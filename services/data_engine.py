@@ -158,30 +158,31 @@ def process_idempotency_pass(
     for t in trans_lista:
         if t.get('is_dupe') or t.get('dest_profile', '').startswith('Ign'):
             continue
-            
+
         c = str(t.get("Cartao", "")).strip()
         c = c.zfill(4) if c.isdigit() else c
         d = str(t.get("Descricao", "")).strip()
         v = float(t.get("Valor", 0))
-        
+        tipo = t.get("Tipo", "debito")
+
         prof = t.get('dest_profile', 'Principal')
-        
+
         if prof not in buffers:
             continue
-            
+
         for idx, e_t in enumerate(buffers[prof]):
             e_c = str(e_t.get("Cartao", "")).strip()
             e_c = e_c.zfill(4) if e_c.isdigit() else e_c
             e_v = float(e_t.get("Valor", 0))
             e_d = str(e_t.get("Descricao", "")).strip()
-            
-            if c == e_c:
+
+            if c == e_c and tipo == e_t.get("Tipo", "debito"):
                 similarity = difflib.SequenceMatcher(None, normalize_text(d), normalize_text(e_d)).ratio()
                 price_diff = abs(v - e_v)
-                if cond_match_func(similarity, price_diff):
+                if cond_match_func(similarity, price_diff, v):
                     t['is_dupe'] = True
                     buffers[prof].pop(idx)
-                    break 
+                    break
 
 
 # ═══════════════════════════════════════
