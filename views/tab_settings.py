@@ -31,6 +31,7 @@ def render_page():
     
     if meses_trans:
         mes_trans = st.selectbox("Selecione o mês desejado", meses_trans,
+                                 index=len(meses_trans) - 1,
                                  key="trans_mes_edit")
     
         # ── Importação em Lote ──
@@ -473,7 +474,7 @@ def render_page():
             column_config={
                 "_id": None, # Esconde o ID interno do usuário
                 "Descricao": st.column_config.TextColumn("Descrição", width="medium"),
-                "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros"]),
+                "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros", "Crédito/Estorno"]),
                 "Valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
                 "Cartao": st.column_config.TextColumn("Cartão (ex: 1234, Nubank)"),
             },
@@ -532,9 +533,15 @@ def render_page():
                     with st.spinner(f"Classificando com IA..."):
                         todas_trans_class = transacoes_data.get(mes_trans, [])
                         if todas_trans_class:
-                            # Créditos recebem categoria fixa; apenas débitos vão para a IA
+                            _PALAVRAS_CREDITO = re.compile(
+                                r'\b(ESTORNO|CREDITO|DEVOLUCAO|DEVOL|IOF|CASHBACK|REEMBOLSO|CANCELAMENTO|CANCELAM)\b',
+                                re.IGNORECASE
+                            )
+                            # Créditos por Tipo ou por palavra-chave recebem categoria fixa
                             for t in todas_trans_class:
-                                if t.get("Tipo") == "credito":
+                                desc = str(t.get("Descricao", ""))
+                                if t.get("Tipo") == "credito" or _PALAVRAS_CREDITO.search(desc):
+                                    t["Tipo"] = "credito"
                                     t["Categoria"] = "Crédito/Estorno"
 
                             # Remove débitos duplicados que são versão antiga de um crédito

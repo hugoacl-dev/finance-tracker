@@ -631,13 +631,13 @@ def render_page():
                 opcoes_cat = sorted(r["df_ops"]["Categoria"].unique().tolist()) if "Categoria" in r["df_ops"].columns else []
                 filtro_cat = st.multiselect("Filtrar por Categoria", options=opcoes_cat, default=None, key="filtro_cat_lanc")
     
-            display_cols = [c for c in ["Descricao", "Categoria", "Valor", "Cartao"] if c in r["df_ops"].columns]
+            display_cols = [c for c in ["Descricao", "Categoria", "Valor", "Cartao", "Tipo"] if c in r["df_ops"].columns]
             disp = r["df_ops"][display_cols].copy()
-            
+
             if busca and busca.strip():
                 mask_text = disp["Descricao"].str.contains(busca.strip(), case=False, na=False)
                 disp = disp[mask_text]
-                
+
             if filtro_cat:
                 disp = disp[disp["Categoria"].isin(filtro_cat)]
 
@@ -664,7 +664,20 @@ def render_page():
                 disp.insert(0, "Flags", flags)
 
             disp["Valor"] = disp["Valor"].map(lambda v: f"R$ {v:,.2f}" if isinstance(v, (int, float)) else v)
-            st.dataframe(disp, use_container_width=True, hide_index=True)
+
+            # Identificar créditos para colorir em verde
+            if "Tipo" in disp.columns:
+                tipo_mask = disp["Tipo"] == "credito"
+                disp["Tipo"] = disp["Tipo"].map(lambda t: "↩ Crédito" if t == "credito" else "↓ Débito")
+
+                def _highlight_credito(row):
+                    if tipo_mask.loc[row.name]:
+                        return ["color: #22c55e; font-weight: 600"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(disp.style.apply(_highlight_credito, axis=1), use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
     # ──────────────────────────────────────────────
