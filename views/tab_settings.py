@@ -528,6 +528,7 @@ def render_page():
     
                 transacoes_data[mes_trans] = payload
                 data_service.save_transacoes(perfil_ativo, mes_trans, payload)
+                st.session_state.pop(f"editor_trans_{mes_trans}", None)
                 st.success(f"Lançamentos de {mes_trans} salvos!")
                 time.sleep(1)
                 st.rerun()
@@ -567,6 +568,7 @@ def render_page():
 
                             data_service.save_transacoes(perfil_ativo, mes_trans, todas)
                             transacoes_data[mes_trans] = todas
+                            st.session_state.pop(f"editor_trans_{mes_trans}", None)
                             st.success("Atualizado!")
                             st.rerun()
     
