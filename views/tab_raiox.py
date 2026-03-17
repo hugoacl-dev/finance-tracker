@@ -406,11 +406,20 @@ def render_page():
                             hide_index=True
                         )
 
+        # Créditos do mês (estornos, IOF, devoluções)
+        df_creditos = pd.DataFrame()
+        total_creditos = 0.0
+        if not r["df_ops"].empty and "Tipo" in r["df_ops"].columns:
+            df_creditos = r["df_ops"][r["df_ops"]["Tipo"] == "credito"].copy()
+            total_creditos = df_creditos["Valor"].sum()
+
         # Tabela unificada para o restante do resumo
         table_html = '<table class="summary-table" style="margin-top: 0.15rem;">'
         table_html += '<tbody>'
         table_html += f'<tr><td><strong>Total Fixos</strong></td><td style="text-align:right"><strong>R$ {r["total_fixos"]:,.2f}</strong></td></tr>'
         table_html += f'<tr><td>🛒 Variáveis ({mes_sel})</td><td style="text-align:right">R$ {r["total_variaveis"]:,.2f}</td></tr>'
+        if total_creditos > 0:
+            table_html += f'<tr><td style="color:#22c55e;">↩ Créditos/Estornos</td><td style="text-align:right; color:#22c55e;">− R$ {total_creditos:,.2f}</td></tr>'
         table_html += f'<tr><td><strong>Total Comprometido</strong></td><td style="text-align:right"><strong>R$ {r["total_comprometido"]:,.2f}</strong></td></tr>'
         table_html += f'<tr><td>Saldo Restante do Teto</td><td style="text-align:right">R$ {r["saldo_teto"]:,.2f}</td></tr>'
         table_html += f'<tr><td>Meta de Aporte</td><td style="text-align:right">R$ {META_APORTE:,.2f}</td></tr>'
@@ -490,6 +499,19 @@ def render_page():
                         height=500
                     )
                     st.plotly_chart(fig_tree, use_container_width=True)
+
+        # ---- Créditos e Estornos ----
+        if not df_creditos.empty:
+            with st.expander(f"↩ Créditos e Estornos — **− R$ {total_creditos:,.2f}**"):
+                cols_show = [c for c in ["Descricao", "Valor", "Cartao", "Titular"] if c in df_creditos.columns]
+                df_cred_show = df_creditos[cols_show].rename(columns={
+                    "Descricao": "Descrição", "Valor": "Valor (R$)", "Cartao": "Cartão", "Titular": "Titular"
+                })
+                st.dataframe(
+                    df_cred_show.style.format({"Valor (R$)": "R$ {:,.2f}"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         # ---- Gamificação: Radar e Progresso por Categoria ----
         idx_sel = all_meses.index(mes_sel) if mes_sel in all_meses else -1
