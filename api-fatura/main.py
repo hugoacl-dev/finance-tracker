@@ -263,12 +263,16 @@ def dedup_transacoes(
             c = c.zfill(4) if c.isdigit() else c
             d = str(t.get("Descricao", "")).strip()
             v = float(t.get("Valor", 0))
+            tipo = t.get("Tipo", "debito")
             prof = t["dest_profile"]
 
             for idx, e in enumerate(bufs.get(prof, [])):
                 e_c = str(e.get("Cartao", "")).strip()
                 e_c = e_c.zfill(4) if e_c.isdigit() else e_c
                 if c != e_c:
+                    continue
+                # Tipo deve ser igual: débito ≠ crédito (estorno ≠ compra)
+                if tipo != e.get("Tipo", "debito"):
                     continue
                 e_d = str(e.get("Descricao", "")).strip()
                 e_v = float(e.get("Valor", 0))
@@ -285,8 +289,9 @@ def dedup_transacoes(
     pass_dedup(novas, buffers, lambda s, p: s == 1.0 and p == 0)
     # Pass 2: descricao >= 80% similar, valor exato
     pass_dedup(novas, buffers, lambda s, p: s >= 0.80 and p == 0)
-    # Pass 3: descricao >= 90% similar, valor ±0.50
-    pass_dedup(novas, buffers, lambda s, p: s >= 0.90 and p <= 0.50)
+    # Pass 3: descricao >= 90% similar, valor exato (sem tolerância: evita false-positive
+    # em créditos pequenos com descrição idêntica, ex: múltiplos IOF com valores distintos)
+    pass_dedup(novas, buffers, lambda s, p: s >= 0.90 and p == 0)
 
     novos = []
     ignorados = []
@@ -444,7 +449,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                 pid = get_profile_id(supabase, perfil)
                 result = (
                     supabase.table("transacoes")
-                    .select("descricao, valor, cartao, titular")
+                    .select("descricao, valor, cartao, titular, tipo")
                     .eq("profile_id", pid)
                     .eq("mes", ciclo)
                     .execute()
@@ -455,6 +460,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                         "Valor": float(t["valor"]),
                         "Cartao": t["cartao"],
                         "Titular": t.get("titular"),
+                        "Tipo": t.get("tipo", "debito"),
                     }
                     for t in result.data
                 ]
