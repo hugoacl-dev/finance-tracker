@@ -563,7 +563,7 @@ def render_page():
                                         t["Categoria"] = cmap.get(i, "Outros")
                                 except Exception as e:
                                     st.error(f"Erro na classificação IA: {e}")
-                                    st.stop()
+                                    # Continua para salvar pelo menos os créditos marcados
 
                             data_service.save_transacoes(perfil_ativo, mes_trans, todas)
                             transacoes_data[mes_trans] = todas
