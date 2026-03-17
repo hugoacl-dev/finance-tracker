@@ -536,6 +536,26 @@ def render_page():
                             for t in todas_trans_class:
                                 if t.get("Tipo") == "credito":
                                     t["Categoria"] = "Crédito/Estorno"
+
+                            # Remove débitos duplicados que são versão antiga de um crédito
+                            # (ex: IOF CAIXA importado como débito antes da correção do OCR)
+                            creditos = [t for t in todas_trans_class if t.get("Tipo") == "credito"]
+                            indices_obsoletos = set()
+                            for i, td in enumerate(todas_trans_class):
+                                if td.get("Tipo") != "debito":
+                                    continue
+                                d_norm = normalize_text(str(td.get("Descricao", "")))
+                                v_d = float(td.get("Valor", 0))
+                                for tc in creditos:
+                                    c_norm = normalize_text(str(tc.get("Descricao", "")))
+                                    v_c = float(tc.get("Valor", 0))
+                                    sim = difflib.SequenceMatcher(None, d_norm, c_norm).ratio()
+                                    if sim >= 0.70 and abs(v_d - v_c) < 0.01:
+                                        indices_obsoletos.add(i)
+                                        break
+                            if indices_obsoletos:
+                                todas_trans_class = [t for i, t in enumerate(todas_trans_class) if i not in indices_obsoletos]
+
                             debitos_class = [(i, t) for i, t in enumerate(todas_trans_class) if t.get("Tipo") != "credito"]
 
                             prompt = "Classifique cada transação abaixo em uma das categorias: Alimentação, Supermercado, Transporte, Saúde, Assinatura, Lazer, Pet, Compras, Combustível, Casa, Outros. Responda APENAS em JSON no formato: [{\"idx\": <indice_inteiro>, \"categoria\": \"<categoria>\"}]\n\n"
