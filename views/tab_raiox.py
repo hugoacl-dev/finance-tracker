@@ -641,6 +641,9 @@ def render_page():
             if filtro_cat:
                 disp = disp[disp["Categoria"].isin(filtro_cat)]
 
+            # Captura índices de crédito ANTES de qualquer transformação
+            credito_idx = set(disp.index[disp["Tipo"] == "credito"].tolist()) if "Tipo" in disp.columns else set()
+
             # Enriquecer com anomalias e parcelamentos
             if "Categoria" in disp.columns and "Valor" in disp.columns:
                 cat_stats = r["df_ops"].groupby("Categoria")["Valor"].agg(["mean", "std"]).to_dict(orient="index")
@@ -665,19 +668,18 @@ def render_page():
 
             disp["Valor"] = disp["Valor"].map(lambda v: f"R$ {v:,.2f}" if isinstance(v, (int, float)) else v)
 
-            # Identificar créditos para colorir em verde
             if "Tipo" in disp.columns:
-                tipo_mask = disp["Tipo"] == "credito"
                 disp["Tipo"] = disp["Tipo"].map(lambda t: "↩ Crédito" if t == "credito" else "↓ Débito")
 
-                def _highlight_credito(row):
-                    if tipo_mask.loc[row.name]:
-                        return ["color: #22c55e; font-weight: 600"] * len(row)
-                    return [""] * len(row)
+            def _highlight_credito(row):
+                if row.name in credito_idx:
+                    return ["background-color: #14532d26; color: #22c55e; font-weight: 600"] * len(row)
+                return [""] * len(row)
 
-                st.dataframe(disp.style.apply(_highlight_credito, axis=1), use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(disp, use_container_width=True, hide_index=True)
+            st.dataframe(
+                disp.style.apply(_highlight_credito, axis=1).hide(axis="index"),
+                use_container_width=True,
+            )
 
 
     # ──────────────────────────────────────────────
