@@ -60,7 +60,7 @@ def classificar_itens_texto(itens_texto: str, model_name: str, regras_ia: str) -
     prompt = f"""Você é um motor de categorização financeira de alta velocidade. Sua missão é ler as seguintes linhas de transação e devolver um JSON Array puro informando qual categoria mapeia cada índice de item passado, mantendo ordem 1:1 rigorosa.
     
 Categorias Admissíveis:
-["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros"]
+["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros", "Crédito/Estorno"]
 
 Regras Definidas pelo Usuário do App:
 {regras_ia}
