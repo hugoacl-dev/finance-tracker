@@ -536,11 +536,12 @@ def render_page():
         with col_sav2:
             if gemini_client:
                 if st.button("🤖 Auto-Classificar Mês", use_container_width=True, key="auto_class_trans"):
-                    with st.spinner("Classificando com IA..."):
-                        todas = transacoes_data.get(mes_trans, [])
-                        if not todas:
-                            st.info("Nenhuma transação para classificar.")
-                        else:
+                    todas = transacoes_data.get(mes_trans, [])
+                    if not todas:
+                        st.info("Nenhuma transação para classificar.")
+                    else:
+                        ia_error = None
+                        with st.spinner("Classificando com IA..."):
                             KW_CREDITO = {"IOF", "ESTORNO", "DEVOLUCAO", "DEVOL", "CASHBACK",
                                           "REEMBOLSO", "CANCELAMENTO", "CANCELAM", "CREDITO"}
                             for t in todas:
@@ -563,19 +564,22 @@ def render_page():
                                     for i, t in enumerate(debitos):
                                         t["Categoria"] = cmap.get(i, "Outros")
                                 except Exception as e:
-                                    st.error(f"Erro na classificação IA: {e}")
-                                    # Continua para salvar pelo menos os créditos marcados
+                                    ia_error = str(e)
 
-                            try:
-                                data_service.save_transacoes(perfil_ativo, mes_trans, todas)
-                            except Exception as e:
-                                st.error(f"Erro ao salvar: {e}")
-                                st.stop()
-                            transacoes_data[mes_trans] = todas
-                            st.session_state.pop(f"editor_trans_{mes_trans}", None)
-                            st.success("Atualizado!")
-                            time.sleep(1)
-                            st.rerun()
+                        if ia_error:
+                            st.error(f"Erro na classificação IA: {ia_error}")
+
+                        try:
+                            data_service.save_transacoes(perfil_ativo, mes_trans, todas)
+                        except Exception as e:
+                            st.error(f"Erro ao salvar: {e}")
+                            st.stop()
+
+                        transacoes_data[mes_trans] = todas
+                        st.session_state.pop(f"editor_trans_{mes_trans}", None)
+                        st.success("Atualizado!")
+                        time.sleep(1)
+                        st.rerun()
     
     else:
         st.info("Nenhum mês cadastrado. Crie um mês abaixo.")
