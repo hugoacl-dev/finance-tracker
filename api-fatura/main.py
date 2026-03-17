@@ -359,10 +359,20 @@ Extraia nas transações apenas dia e mês (ex: 12/02), eliminando o ano.
 Extraia a data agregada (ex: 12/02) DENTRO DA DESCRICAO para ficar "12/02 DESCRICAO".
 
 [REGRA DE TIPO]
-Cada lançamento pode ser um débito (gasto) ou crédito (estorno/devolução na fatura).
-- "Tipo": "debito" → lançamentos normais de compra/tarifa (valores em preto/branco ou sem destaque especial)
-- "Tipo": "credito" → estornos, devoluções e créditos (geralmente exibidos em verde, com sinal negativo, ou com texto como "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO")
-O valor em "Valor" é sempre positivo (sem sinal); o campo "Tipo" indica se reduz ou aumenta o gasto.
+Cada lançamento é débito (gasto) ou crédito (redução na fatura). Siga esta ordem de prioridade:
+
+1. COR DO TEXTO/LINHA (critério principal e definitivo):
+   - Texto ou valor em VERDE → "Tipo": "credito" (sem exceção)
+   - Texto ou valor em PRETO, CINZA, BRANCO ou qualquer outra cor → "Tipo": "debito"
+
+2. SINAL NEGATIVO (quando a cor não for identificável):
+   - Valor precedido de sinal negativo (−) → "Tipo": "credito"
+
+3. PALAVRAS-CHAVE NA DESCRIÇÃO (fallback final):
+   - Contém "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO" ou equivalentes → "Tipo": "credito"
+   - Demais lançamentos → "Tipo": "debito"
+
+O campo "Valor" é sempre positivo (sem sinal); o campo "Tipo" determina se o lançamento reduz ou aumenta o gasto.
 
 Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra, e sem a crase de markdown ```json). O output esperado é uma lista pura como:
 [
@@ -505,13 +515,17 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
         novos, ignorados = dedup_transacoes(todas_transacoes, existentes)
         logger.info(f"Dedup: {len(novos)} novos, {len(ignorados)} ignorados")
 
-        # 6. Classificar categorias (só os novos)
-        if novos:
+        # 6. Classificar categorias (só os novos débitos; créditos recebem categoria fixa)
+        for t in novos:
+            if t.get("Tipo") == "credito":
+                t["Categoria"] = "Crédito/Estorno"
+        novos_debito = [t for t in novos if t.get("Tipo") != "credito"]
+        if novos_debito:
             try:
-                classificar_transacoes(gemini, gemini_model, novos, regras_ia)
+                classificar_transacoes(gemini, gemini_model, novos_debito, regras_ia)
             except Exception as e:
                 logger.error(f"Erro classificação: {e}")
-                for t in novos:
+                for t in novos_debito:
                     t.setdefault("Categoria", "Outros")
 
         # 7. Insert batch por perfil
