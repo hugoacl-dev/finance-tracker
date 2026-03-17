@@ -566,10 +566,15 @@ def render_page():
                                     st.error(f"Erro na classificação IA: {e}")
                                     # Continua para salvar pelo menos os créditos marcados
 
-                            data_service.save_transacoes(perfil_ativo, mes_trans, todas)
+                            try:
+                                data_service.save_transacoes(perfil_ativo, mes_trans, todas)
+                            except Exception as e:
+                                st.error(f"Erro ao salvar: {e}")
+                                st.stop()
                             transacoes_data[mes_trans] = todas
                             st.session_state.pop(f"editor_trans_{mes_trans}", None)
                             st.success("Atualizado!")
+                            time.sleep(1)
                             st.rerun()
     
     else:
