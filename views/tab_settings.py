@@ -2,7 +2,7 @@ import json
 import streamlit as st
 import pandas as pd
 from services.data_engine import process_idempotency_pass, is_similar, normalize_text
-from services.ocr_gemini import get_gemini_client
+from services.ocr_gemini import get_gemini_client, classificar_itens_texto
 from core.utils import mes_sort_key
 import PIL.Image
 import re
@@ -27,18 +27,14 @@ def render_page():
     DIA_FECHAMENTO = int(cfg.get("Dia_Fechamento", 13))
     GEMINI_MODEL = cfg.get("Gemini_Model", "gemini-2.5-flash")
     GEMINI_VISION_MODEL = cfg.get("Gemini_Vision_Model", "gemini-3.1-pro-preview")
-    meses_trans = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())), key=mes_sort_key)
+    meses_trans = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
 
     if meses_trans:
-        # Sempre aponta para o mês mais recente quando um novo mês aparece.
-        # _cfg_latest_mes rastreia o último máximo visto; quando muda (novo mês
-        # adicionado ou primeira carga), o selectbox é forçado ao mais recente.
-        latest_mes = meses_trans[-1]
-        if st.session_state.get("_cfg_latest_mes") != latest_mes:
-            st.session_state["trans_mes_edit"] = latest_mes
-            st.session_state["_cfg_latest_mes"] = latest_mes
-        mes_trans = st.selectbox("Selecione o mês desejado", meses_trans,
-                                 key="trans_mes_edit")
+        # Força o seletor para o mês mais recente sempre que um novo mês aparecer
+        if st.session_state.get("_cfg_latest_mes") != meses_trans[-1]:
+            st.session_state["_cfg_latest_mes"] = meses_trans[-1]
+            st.session_state["trans_mes_edit"] = meses_trans[-1]
+        mes_trans = st.selectbox("Selecione o mês desejado", meses_trans, key="trans_mes_edit")
     
         # ── Importação em Lote ──
         st.markdown("---")
@@ -538,77 +534,41 @@ def render_page():
     
         with col_sav2:
             if gemini_client:
-                if st.button(f"🤖 Auto-Classificar Mês", use_container_width=True, key="auto_class_trans"):
-                    with st.spinner(f"Classificando com IA..."):
-                        todas_trans_class = transacoes_data.get(mes_trans, [])
-                        if todas_trans_class:
-                            _KW_CREDITO = {"IOF", "ESTORNO", "DEVOLUCAO", "DEVOL", "CASHBACK",
-                                           "REEMBOLSO", "CANCELAMENTO", "CANCELAM", "CREDITO"}
-                            # Créditos por Tipo ou por palavra-chave recebem categoria fixa
-                            # normalize_text remove acentos e espaços — ex: "CRÉDITO" → "CREDITO"
-                            for t in todas_trans_class:
-                                desc_norm = normalize_text(str(t.get("Descricao", "")))
-                                if t.get("Tipo") == "credito" or any(kw in desc_norm for kw in _KW_CREDITO):
+                if st.button("🤖 Auto-Classificar Mês", use_container_width=True, key="auto_class_trans"):
+                    with st.spinner("Classificando com IA..."):
+                        todas = transacoes_data.get(mes_trans, [])
+                        if not todas:
+                            st.info("Nenhuma transação para classificar.")
+                        else:
+                            KW_CREDITO = {"IOF", "ESTORNO", "DEVOLUCAO", "DEVOL", "CASHBACK",
+                                          "REEMBOLSO", "CANCELAMENTO", "CANCELAM", "CREDITO"}
+                            for t in todas:
+                                if t.get("Tipo") == "credito" or any(
+                                    kw in normalize_text(str(t.get("Descricao", ""))) for kw in KW_CREDITO
+                                ):
                                     t["Tipo"] = "credito"
                                     t["Categoria"] = "Crédito/Estorno"
 
-                            # Remove débitos duplicados que são versão antiga de um crédito
-                            # (ex: IOF CAIXA importado como débito antes da correção do OCR)
-                            creditos = [t for t in todas_trans_class if t.get("Tipo") == "credito"]
-                            indices_obsoletos = set()
-                            for i, td in enumerate(todas_trans_class):
-                                if td.get("Tipo") != "debito":
-                                    continue
-                                d_norm = normalize_text(str(td.get("Descricao", "")))
-                                v_d = float(td.get("Valor", 0))
-                                for tc in creditos:
-                                    c_norm = normalize_text(str(tc.get("Descricao", "")))
-                                    v_c = float(tc.get("Valor", 0))
-                                    sim = difflib.SequenceMatcher(None, d_norm, c_norm).ratio()
-                                    if sim >= 0.70 and abs(v_d - v_c) < 0.01:
-                                        indices_obsoletos.add(i)
-                                        break
-                            if indices_obsoletos:
-                                todas_trans_class = [t for i, t in enumerate(todas_trans_class) if i not in indices_obsoletos]
-
-                            debitos_class = [(i, t) for i, t in enumerate(todas_trans_class) if t.get("Tipo") != "credito"]
-
-                            prompt = "Classifique cada transação abaixo em uma das categorias: Alimentação, Supermercado, Transporte, Saúde, Assinatura, Lazer, Pet, Compras, Combustível, Casa, Outros. Responda APENAS em JSON no formato: [{\"idx\": <indice_inteiro>, \"categoria\": \"<categoria>\"}]\n\n"
-
-                            regras_ia = cfg_raw.get("Regras_IA", "").strip() if cfg_raw else ""
-                            if regras_ia:
-                                prompt += f"Regras Específicas do Usuário (Siga estritamente):\n{regras_ia}\n\n"
-
-                            prompt += "Transações:\n"
-                            for seq, (i, t) in enumerate(debitos_class):
-                                prompt += f"{seq}. {t.get('Descricao', '')} - R$ {t.get('Valor', 0)}\n"
-
-                            try:
-                                if debitos_class:
-                                    response = gemini_client.models.generate_content(
-                                        model=GEMINI_MODEL,
-                                        contents=prompt,
+                            debitos = [t for t in todas if t.get("Tipo") != "credito"]
+                            if debitos:
+                                try:
+                                    regras_ia = (cfg_raw or {}).get("Regras_IA", "").strip()
+                                    itens = "\n".join(
+                                        f"{i}: {t.get('Descricao', '')} - R$ {t.get('Valor', 0)}"
+                                        for i, t in enumerate(debitos)
                                     )
-                                    raw_json = response.text.strip()
-                                    if raw_json.startswith("```json"):
-                                        raw_json = raw_json[7:-3]
-                                    elif raw_json.startswith("```"):
-                                        raw_json = raw_json[3:-3]
-                                    classfs = json.loads(raw_json)
-                                    # idx pode vir como int ou string do LLM — converte para int
+                                    classfs = classificar_itens_texto(itens, GEMINI_MODEL, regras_ia)
                                     cmap = {int(c.get("idx", -1)): c.get("categoria", "Outros") for c in classfs}
+                                    for i, t in enumerate(debitos):
+                                        t["Categoria"] = cmap.get(i, "Outros")
+                                except Exception as e:
+                                    st.error(f"Erro na classificação IA: {e}")
+                                    st.stop()
 
-                                    for seq, (i, t) in enumerate(debitos_class):
-                                        t["Categoria"] = cmap.get(seq, "Outros")
-                                    
-                                transacoes_data[mes_trans] = todas_trans_class
-                                data_service.save_transacoes(perfil_ativo, mes_trans, todas_trans_class)
-                                st.success("Atualizado!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro na classificação IA: {e}")
-                        else:
-                            st.info("Nenhuma transação para classificar.")
+                            data_service.save_transacoes(perfil_ativo, mes_trans, todas)
+                            transacoes_data[mes_trans] = todas
+                            st.success("Atualizado!")
+                            st.rerun()
     
     else:
         st.info("Nenhum mês cadastrado. Crie um mês abaixo.")
