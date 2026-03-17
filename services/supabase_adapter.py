@@ -234,11 +234,12 @@ class SupabaseAdapter(DataService):
                 "Cartao": t.get("cartao"),
                 "Titular": t.get("titular"),
                 "Categoria": t.get("categoria"),
+                "Tipo": t.get("tipo", "debito"),
             }
             transacoes.append(trans)
-        
+
         return transacoes
-    
+
     def add_transacao(self, profile_name: str, mes: str, transacao: Dict) -> str:
         """Adiciona uma transação e retorna o ID"""
         profile_id = self._get_profile_id(profile_name)
@@ -251,6 +252,7 @@ class SupabaseAdapter(DataService):
             "cartao": transacao.get("Cartao"),
             "titular": transacao.get("Titular", "Sistema"),
             "categoria": transacao.get("Categoria", "Outros"),
+            "tipo": transacao.get("Tipo", "debito"),
         }
         
         result = self.client.table("transacoes").insert(record).execute()
@@ -284,9 +286,10 @@ class SupabaseAdapter(DataService):
                 "cartao": str(trans.get("Cartao", "")),
                 "titular": str(trans.get("Titular", "Sistema")),
                 "categoria": str(trans.get("Categoria", "Outros")),
+                "tipo": str(trans.get("Tipo", "debito")),
             }
             records.append(record)
-        
+
         result = self.client.table("transacoes").insert(records).execute()
         return [r["id"] for r in result.data]
     
@@ -303,7 +306,9 @@ class SupabaseAdapter(DataService):
             db_updates["titular"] = updates["Titular"]
         if "Categoria" in updates:
             db_updates["categoria"] = updates["Categoria"]
-        
+        if "Tipo" in updates:
+            db_updates["tipo"] = updates["Tipo"]
+
         self.client.table("transacoes")\
             .update(db_updates)\
             .eq("id", transacao_id)\
@@ -365,11 +370,12 @@ class SupabaseAdapter(DataService):
                 "Cartao": t.get("cartao"),
                 "Titular": t.get("titular"),
                 "Categoria": t.get("categoria"),
+                "Tipo": t.get("tipo", "debito"),
             }
             transacoes.append(trans)
-        
+
         return transacoes
-    
+
     # ===== MESES =====
     
     def get_all_meses(self, profile_name: str) -> List[str]:
@@ -460,6 +466,7 @@ class SupabaseAdapter(DataService):
                 "Cartao": t.get("cartao"),
                 "Titular": t.get("titular"),
                 "Categoria": t.get("categoria"),
+                "Tipo": t.get("tipo", "debito"),
             }
             transacoes_data[mes].append(trans)
         

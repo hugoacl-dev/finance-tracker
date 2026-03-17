@@ -22,9 +22,10 @@ def extrair_faturas_imagem(image, model_name: str) -> list[dict]:
 
 Para CADA LINHA DE COMPRA visível na imagem, extraia:
 1. "Descricao": Nome exato do estabelecimento + Data de compra juntos (ex: "12/02 RESTAURANTE", "13/02 SUPERMERCADO"). Trate compras parceladas com seu sufixo intacto.
-2. "Valor": Apenas o número em formato flutuante (ex: 73.89, sem vírgulas ou 'R$').
+2. "Valor": Apenas o número em formato flutuante positivo (ex: 73.89, sem vírgulas ou 'R$'). Sempre positivo.
 3. "Cartao": Somente os últimos 4 dígitos impressos próximo da transação (ex: "1234", "5678"). Se a fatura não mostrar o final do cartão para a compra, observe de quem é a fatura e agrupe sob "Nubank" ou "Itau" dependendo do nome do banco impresso.
 4. "Titular": Identifique o portador da fatura conforme indicado no app (ex: "Compras de Fulano"). Especifique o nome encontrado. Se não der para saber, use "Sistema".
+5. "Tipo": "debito" para compras/débitos normais; "credito" para estornos, devoluções ou créditos na fatura (geralmente exibidos em verde, com sinal negativo, ou com texto como "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO").
 
 Respeite estritamente o Schema de Saída fornecido."""
     

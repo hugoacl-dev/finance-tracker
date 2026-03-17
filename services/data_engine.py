@@ -124,7 +124,11 @@ def processar_mes(
     df_ops = filtro_titularidade(df_ops, perfil_ativo, cartoes_aceitos, cartoes_excluidos)
     df_ops = filtro_dedup_fixos(df_ops, df_config)
 
-    total_variaveis = df_ops["Valor"].sum() if not df_ops.empty else 0.0
+    if not df_ops.empty and "Tipo" in df_ops.columns:
+        sinal = df_ops["Tipo"].apply(lambda t: -1.0 if t == "credito" else 1.0)
+        total_variaveis = (df_ops["Valor"] * sinal).sum()
+    else:
+        total_variaveis = df_ops["Valor"].sum() if not df_ops.empty else 0.0
     total_comprometido = total_fixos + total_variaveis
     saldo_variaveis = limite_base_var - total_variaveis
     saldo_teto = teto_gastos - total_comprometido

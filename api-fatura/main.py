@@ -302,6 +302,8 @@ def dedup_transacoes(
         c = item["Cartao"]
         item["Cartao"] = c.zfill(4) if c.isdigit() else c
 
+        item["Tipo"] = t.get("Tipo", "debito")
+
         if t["is_dupe"]:
             ignorados.append(item)
         else:
@@ -313,7 +315,7 @@ def dedup_transacoes(
 # ── Gemini: OCR ──
 
 PROMPT_OCR = """Você é um extrator de dados financeiros impiedosamente preciso.
-Leia a imagem anexada (fatura de cartão) e extraia TODOS os lançamentos com valor monetário: compras, tarifas, anuidades, encargos, parcelas e quaisquer outros débitos.
+Leia a imagem anexada (fatura de cartão) e extraia TODOS os lançamentos com valor monetário: compras, tarifas, anuidades, encargos, parcelas, estornos, créditos e quaisquer outros lançamentos.
 Pule apenas totais, subtotais, cabeçalhos e linhas sem valor monetário.
 
 [REGRA DE TITULAR E CARTÃO]
@@ -323,13 +325,27 @@ Se não encontrar o nome do titular exposto no cabeçalho do bloco, use "Princip
 Extraia nas transações apenas dia e mês (ex: 12/02), eliminando o ano.
 Extraia a data agregada (ex: 12/02) DENTRO DA DESCRICAO para ficar "12/02 DESCRICAO".
 
+[REGRA DE TIPO]
+Cada lançamento pode ser um débito (gasto) ou crédito (estorno/devolução na fatura).
+- "Tipo": "debito" → lançamentos normais de compra/tarifa (valores em preto/branco ou sem destaque especial)
+- "Tipo": "credito" → estornos, devoluções e créditos (geralmente exibidos em verde, com sinal negativo, ou com texto como "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO")
+O valor em "Valor" é sempre positivo (sem sinal); o campo "Tipo" indica se reduz ou aumenta o gasto.
+
 Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra, e sem a crase de markdown ```json). O output esperado é uma lista pura como:
 [
   {
 "Descricao": "12/02 NOME ESTABELECIMENTO",
 "Valor": 73.89,
 "Cartao": "1234",
-"Titular": "NOME TITULAR"
+"Titular": "NOME TITULAR",
+"Tipo": "debito"
+  },
+  {
+"Descricao": "16/03 IOF ZERO CAIXA VISA",
+"Valor": 0.18,
+"Cartao": "1234",
+"Titular": "NOME TITULAR",
+"Tipo": "credito"
   }
 ]"""
 
@@ -481,6 +497,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                     "cartao": str(t.get("Cartao", "")),
                     "titular": str(t.get("Titular", "Sistema")),
                     "categoria": str(t.get("Categoria", "Outros")),
+                    "tipo": str(t.get("Tipo", "debito")),
                 })
 
             supabase.table("transacoes").insert(records).execute()

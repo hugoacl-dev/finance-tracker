@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import Literal, Optional
 
 class Transacao(BaseModel):
     Descricao: str = Field(min_length=1)
@@ -7,6 +7,7 @@ class Transacao(BaseModel):
     Cartao: str
     Titular: str = "Sistema"
     Categoria: str = "Outros"
+    Tipo: Literal["debito", "credito"] = "debito"
     Perfil: Optional[str] = None
     is_dupe: Optional[bool] = False
     dest_profile: Optional[str] = None
