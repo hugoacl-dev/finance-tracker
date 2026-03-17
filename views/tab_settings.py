@@ -29,7 +29,7 @@ def render_page():
     meses_trans = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
 
     if meses_trans:
-        if "trans_mes_edit" not in st.session_state:
+        if st.session_state.get("trans_mes_edit") not in meses_trans:
             st.session_state["trans_mes_edit"] = meses_trans[-1]
         mes_trans = st.selectbox("Selecione o mês desejado", meses_trans, key="trans_mes_edit")
 
