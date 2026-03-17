@@ -242,6 +242,33 @@ def rotear_perfil(titular: str) -> str:
     return "Principal"
 
 
+def _match_cross_imagem(t: dict, vistas: list[dict]) -> bool:
+    """Verifica se a transação t é duplicata de alguma em vistas (cross-image).
+
+    Critério conservador: mesmo cartão + mesmo tipo + descrição >= 80% similar + valor exato.
+    Não usa tolerância de valor para não eliminar transações legítimas com valores próximos.
+    """
+    c = str(t.get("Cartao", "")).strip()
+    c = c.zfill(4) if c.isdigit() else c
+    d = normalize_text(str(t.get("Descricao", "")))
+    v = float(t.get("Valor", 0))
+    tipo = t.get("Tipo", "debito")
+
+    for s in vistas:
+        s_c = str(s.get("Cartao", "")).strip()
+        s_c = s_c.zfill(4) if s_c.isdigit() else s_c
+        if c != s_c:
+            continue
+        if tipo != s.get("Tipo", "debito"):
+            continue
+        s_d = normalize_text(str(s.get("Descricao", "")))
+        s_v = float(s.get("Valor", 0))
+        sim = difflib.SequenceMatcher(None, d, s_d).ratio()
+        if sim >= 0.80 and abs(v - s_v) == 0:
+            return True
+    return False
+
+
 def dedup_transacoes(
     novas: list[dict], existentes_por_perfil: dict[str, list[dict]]
 ) -> tuple[list[dict], list[dict]]:
@@ -263,6 +290,7 @@ def dedup_transacoes(
             c = c.zfill(4) if c.isdigit() else c
             d = str(t.get("Descricao", "")).strip()
             v = float(t.get("Valor", 0))
+            tipo = t.get("Tipo", "debito")
             prof = t["dest_profile"]
 
             for idx, e in enumerate(bufs.get(prof, [])):
@@ -270,23 +298,28 @@ def dedup_transacoes(
                 e_c = e_c.zfill(4) if e_c.isdigit() else e_c
                 if c != e_c:
                     continue
+                # Tipo deve ser igual: débito ≠ crédito (estorno ≠ compra)
+                if tipo != e.get("Tipo", "debito"):
+                    continue
                 e_d = str(e.get("Descricao", "")).strip()
                 e_v = float(e.get("Valor", 0))
                 similarity = difflib.SequenceMatcher(
                     None, normalize_text(d), normalize_text(e_d)
                 ).ratio()
                 price_diff = abs(v - e_v)
-                if match_fn(similarity, price_diff):
+                if match_fn(similarity, price_diff, v):
                     t["is_dupe"] = True
                     bufs[prof].pop(idx)
                     break
 
     # Pass 1: match exato
-    pass_dedup(novas, buffers, lambda s, p: s == 1.0 and p == 0)
+    pass_dedup(novas, buffers, lambda s, p, v: s == 1.0 and p == 0)
     # Pass 2: descricao >= 80% similar, valor exato
-    pass_dedup(novas, buffers, lambda s, p: s >= 0.80 and p == 0)
-    # Pass 3: descricao >= 90% similar, valor ±0.50
-    pass_dedup(novas, buffers, lambda s, p: s >= 0.90 and p <= 0.50)
+    pass_dedup(novas, buffers, lambda s, p, v: s >= 0.80 and p == 0)
+    # Pass 3: descricao >= 90% similar, tolerância dependente do valor
+    #   > R$5 → até ±0,50 (absorve erros de OCR em decimais de valores maiores)
+    #   ≤ R$5 → exato (evita false-positive em pequenos créditos como IOF)
+    pass_dedup(novas, buffers, lambda s, p, v: s >= 0.90 and p <= (0.50 if v > 5.0 else 0.0))
 
     novos = []
     ignorados = []
@@ -302,6 +335,8 @@ def dedup_transacoes(
         c = item["Cartao"]
         item["Cartao"] = c.zfill(4) if c.isdigit() else c
 
+        item["Tipo"] = t.get("Tipo", "debito")
+
         if t["is_dupe"]:
             ignorados.append(item)
         else:
@@ -313,7 +348,7 @@ def dedup_transacoes(
 # ── Gemini: OCR ──
 
 PROMPT_OCR = """Você é um extrator de dados financeiros impiedosamente preciso.
-Leia a imagem anexada (fatura de cartão) e extraia TODOS os lançamentos com valor monetário: compras, tarifas, anuidades, encargos, parcelas e quaisquer outros débitos.
+Leia a imagem anexada (fatura de cartão) e extraia TODOS os lançamentos com valor monetário: compras, tarifas, anuidades, encargos, parcelas, estornos, créditos e quaisquer outros lançamentos.
 Pule apenas totais, subtotais, cabeçalhos e linhas sem valor monetário.
 
 [REGRA DE TITULAR E CARTÃO]
@@ -323,13 +358,27 @@ Se não encontrar o nome do titular exposto no cabeçalho do bloco, use "Princip
 Extraia nas transações apenas dia e mês (ex: 12/02), eliminando o ano.
 Extraia a data agregada (ex: 12/02) DENTRO DA DESCRICAO para ficar "12/02 DESCRICAO".
 
+[REGRA DE TIPO]
+Cada lançamento pode ser um débito (gasto) ou crédito (estorno/devolução na fatura).
+- "Tipo": "debito" → lançamentos normais de compra/tarifa (valores em preto/branco ou sem destaque especial)
+- "Tipo": "credito" → estornos, devoluções e créditos (geralmente exibidos em verde, com sinal negativo, ou com texto como "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO")
+O valor em "Valor" é sempre positivo (sem sinal); o campo "Tipo" indica se reduz ou aumenta o gasto.
+
 Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra, e sem a crase de markdown ```json). O output esperado é uma lista pura como:
 [
   {
 "Descricao": "12/02 NOME ESTABELECIMENTO",
 "Valor": 73.89,
 "Cartao": "1234",
-"Titular": "NOME TITULAR"
+"Titular": "NOME TITULAR",
+"Tipo": "debito"
+  },
+  {
+"Descricao": "16/03 IOF ZERO CAIXA VISA",
+"Valor": 0.18,
+"Cartao": "1234",
+"Titular": "NOME TITULAR",
+"Tipo": "credito"
   }
 ]"""
 
@@ -393,13 +442,19 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
         gemini_model, gemini_vision_model = get_gemini_models(supabase, "Principal")
         regras_ia = get_regras_ia(supabase, "Principal")
 
-        # 1. OCR de todas as imagens
+        # 1. OCR de todas as imagens (com dedup cross-imagem)
+        # Cada imagem é deduplicada contra as transações já vistas nas imagens anteriores
+        # do mesmo upload, evitando duplicatas por sobreposição de fotos de páginas adjacentes.
         todas_transacoes = []
         for image_bytes, mime in images_data:
             try:
                 extraidas = ocr_imagem(gemini, gemini_vision_model, image_bytes, mime)
-                todas_transacoes.extend(extraidas)
-                logger.info(f"OCR extraiu {len(extraidas)} transações de uma imagem")
+                novas_imagem = [t for t in extraidas if not _match_cross_imagem(t, todas_transacoes)]
+                removidos = len(extraidas) - len(novas_imagem)
+                if removidos:
+                    logger.info(f"Dedup cross-imagem: {removidos} transação(ões) removida(s)")
+                todas_transacoes.extend(novas_imagem)
+                logger.info(f"OCR extraiu {len(novas_imagem)} transações de uma imagem ({len(extraidas)} brutas)")
             except Exception as e:
                 logger.error(f"Erro OCR: {e}")
 
@@ -428,7 +483,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                 pid = get_profile_id(supabase, perfil)
                 result = (
                     supabase.table("transacoes")
-                    .select("descricao, valor, cartao, titular")
+                    .select("descricao, valor, cartao, titular, tipo")
                     .eq("profile_id", pid)
                     .eq("mes", ciclo)
                     .execute()
@@ -439,6 +494,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                         "Valor": float(t["valor"]),
                         "Cartao": t["cartao"],
                         "Titular": t.get("titular"),
+                        "Tipo": t.get("tipo", "debito"),
                     }
                     for t in result.data
                 ]
@@ -481,6 +537,7 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
                     "cartao": str(t.get("Cartao", "")),
                     "titular": str(t.get("Titular", "Sistema")),
                     "categoria": str(t.get("Categoria", "Outros")),
+                    "tipo": str(t.get("Tipo", "debito")),
                 })
 
             supabase.table("transacoes").insert(records).execute()
