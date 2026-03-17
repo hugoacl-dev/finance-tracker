@@ -515,13 +515,17 @@ def processar_faturas(images_data: list[tuple[bytes, str]], x_mes: Optional[str]
         novos, ignorados = dedup_transacoes(todas_transacoes, existentes)
         logger.info(f"Dedup: {len(novos)} novos, {len(ignorados)} ignorados")
 
-        # 6. Classificar categorias (só os novos)
-        if novos:
+        # 6. Classificar categorias (só os novos débitos; créditos recebem categoria fixa)
+        for t in novos:
+            if t.get("Tipo") == "credito":
+                t["Categoria"] = "Crédito/Estorno"
+        novos_debito = [t for t in novos if t.get("Tipo") != "credito"]
+        if novos_debito:
             try:
-                classificar_transacoes(gemini, gemini_model, novos, regras_ia)
+                classificar_transacoes(gemini, gemini_model, novos_debito, regras_ia)
             except Exception as e:
                 logger.error(f"Erro classificação: {e}")
-                for t in novos:
+                for t in novos_debito:
                     t.setdefault("Categoria", "Outros")
 
         # 7. Insert batch por perfil

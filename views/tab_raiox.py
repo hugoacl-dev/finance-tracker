@@ -83,8 +83,9 @@ def render_page():
         # ── Score de Saúde Financeira ──
         qtd_outros_score = 0
         if not r["df_ops"].empty and "Categoria" in r["df_ops"].columns:
-            total_ops = len(r["df_ops"])
-            qtd_outros_score = len(r["df_ops"][r["df_ops"]["Categoria"] == "Outros"])
+            df_debitos = r["df_ops"][r["df_ops"]["Tipo"] != "credito"] if "Tipo" in r["df_ops"].columns else r["df_ops"]
+            total_ops = len(df_debitos)
+            qtd_outros_score = len(df_debitos[df_debitos["Categoria"] == "Outros"])
         pct_nao_class = (qtd_outros_score / total_ops * 100) if not r["df_ops"].empty and total_ops > 0 else 0
 
         # Consistência: stddev do SR dos últimos meses
@@ -116,7 +117,8 @@ def render_page():
         # 1. Gatilho de Organização (Não Classificados)
         qtd_outros = 0
         if not r["df_ops"].empty and "Categoria" in r["df_ops"].columns:
-            qtd_outros = len(r["df_ops"][r["df_ops"]["Categoria"] == "Outros"])
+            df_debitos_alert = r["df_ops"][r["df_ops"]["Tipo"] == "debito"] if "Tipo" in r["df_ops"].columns else r["df_ops"]
+            qtd_outros = len(df_debitos_alert[df_debitos_alert["Categoria"] == "Outros"])
         if qtd_outros > 0:
             alertas_acoes.append({
                 "tipo": "info",
@@ -422,7 +424,10 @@ def render_page():
         # ---- Feature 1: Gráficos de Composição (Treemap e Rosca) ----
         if not r["df_ops"].empty and "Categoria" in r["df_ops"].columns:
             st.markdown('<p class="section-header">Onde o dinheiro se dilui</p>', unsafe_allow_html=True)
-            df_tree = r["df_ops"][r["df_ops"]["Valor"] > 0].copy()
+            if "Tipo" in r["df_ops"].columns:
+                df_tree = r["df_ops"][(r["df_ops"]["Valor"] > 0) & (r["df_ops"]["Tipo"] == "debito")].copy()
+            else:
+                df_tree = r["df_ops"][r["df_ops"]["Valor"] > 0].copy()
             if not df_tree.empty:
                 # Preenchendo valores nulos para evitar erros nos gráficos
                 df_tree["Descricao"] = df_tree["Descricao"].fillna("Desconhecido")
