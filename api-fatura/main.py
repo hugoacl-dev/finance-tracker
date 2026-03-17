@@ -359,10 +359,20 @@ Extraia nas transações apenas dia e mês (ex: 12/02), eliminando o ano.
 Extraia a data agregada (ex: 12/02) DENTRO DA DESCRICAO para ficar "12/02 DESCRICAO".
 
 [REGRA DE TIPO]
-Cada lançamento pode ser um débito (gasto) ou crédito (estorno/devolução na fatura).
-- "Tipo": "debito" → lançamentos normais de compra/tarifa (valores em preto/branco ou sem destaque especial)
-- "Tipo": "credito" → estornos, devoluções e créditos (geralmente exibidos em verde, com sinal negativo, ou com texto como "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO")
-O valor em "Valor" é sempre positivo (sem sinal); o campo "Tipo" indica se reduz ou aumenta o gasto.
+Cada lançamento é débito (gasto) ou crédito (redução na fatura). Siga esta ordem de prioridade:
+
+1. COR DO TEXTO/LINHA (critério principal e definitivo):
+   - Texto ou valor em VERDE → "Tipo": "credito" (sem exceção)
+   - Texto ou valor em PRETO, CINZA, BRANCO ou qualquer outra cor → "Tipo": "debito"
+
+2. SINAL NEGATIVO (quando a cor não for identificável):
+   - Valor precedido de sinal negativo (−) → "Tipo": "credito"
+
+3. PALAVRAS-CHAVE NA DESCRIÇÃO (fallback final):
+   - Contém "ESTORNO", "CREDITO", "IOF ZERO", "DEVOLUCAO" ou equivalentes → "Tipo": "credito"
+   - Demais lançamentos → "Tipo": "debito"
+
+O campo "Valor" é sempre positivo (sem sinal); o campo "Tipo" determina se o lançamento reduz ou aumenta o gasto.
 
 Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra, e sem a crase de markdown ```json). O output esperado é uma lista pura como:
 [
@@ -383,19 +393,6 @@ Sua resposta DEVE ser um array JSON validado ESTRITO (sem nenhuma outra palavra,
 ]"""
 
 
-_KEYWORDS_CREDITO = {"ESTORNO", "CREDITO", "CRÉDITO", "IOF ZERO", "DEVOLUCAO", "DEVOLUÇÃO"}
-
-
-def _corrigir_tipo_por_descricao(transacoes: list[dict]) -> list[dict]:
-    """Corrige deterministicamente o Tipo para 'credito' quando a descrição contém palavras-chave
-    conhecidas de crédito/estorno, evitando erros do modelo OCR em faturas sem destaque visual."""
-    for t in transacoes:
-        desc_upper = str(t.get("Descricao", "")).upper()
-        if any(kw in desc_upper for kw in _KEYWORDS_CREDITO):
-            t["Tipo"] = "credito"
-    return transacoes
-
-
 def ocr_imagem(client: genai.Client, model: str, image_bytes: bytes, mime_type: str) -> list[dict]:
     img = Image.open(io.BytesIO(image_bytes))
     response = client.models.generate_content(
@@ -407,8 +404,7 @@ def ocr_imagem(client: genai.Client, model: str, image_bytes: bytes, mime_type: 
         raw = raw[7:-3]
     elif raw.startswith("```"):
         raw = raw[3:-3]
-    transacoes = json.loads(raw.strip())
-    return _corrigir_tipo_por_descricao(transacoes)
+    return json.loads(raw.strip())
 
 
 # ── Gemini: Classificação ──
