@@ -610,9 +610,11 @@ def render_page():
     st.markdown("---")
     st.markdown('<p class="section-header">Gastos Fixos Mensais</p>', unsafe_allow_html=True)
     
-    meses_config = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())))
-    
+    meses_config = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())), key=mes_sort_key)
+
     if meses_config:
+        if st.session_state.get("config_mes_edit") not in meses_config:
+            st.session_state["config_mes_edit"] = meses_config[-1]
         mes_edit = st.selectbox("Selecione o mês para editar fixos", meses_config,
                                 key="config_mes_edit")
     
