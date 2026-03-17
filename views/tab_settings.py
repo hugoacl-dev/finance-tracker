@@ -6,7 +6,6 @@ from services.ocr_gemini import get_gemini_client, classificar_itens_texto
 from core.utils import mes_sort_key
 import PIL.Image
 import re
-import time
 import difflib
 
 def render_page():
@@ -30,12 +29,15 @@ def render_page():
     meses_trans = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
 
     if meses_trans:
-        # Força o seletor para o mês mais recente sempre que um novo mês aparecer
-        if st.session_state.get("_cfg_latest_mes") != meses_trans[-1]:
-            st.session_state["_cfg_latest_mes"] = meses_trans[-1]
+        if "trans_mes_edit" not in st.session_state:
             st.session_state["trans_mes_edit"] = meses_trans[-1]
         mes_trans = st.selectbox("Selecione o mês desejado", meses_trans, key="trans_mes_edit")
-    
+
+        if msg := st.session_state.pop("_notify_success", None):
+            st.success(msg)
+        if msg := st.session_state.pop("_notify_error", None):
+            st.error(msg)
+
         # ── Importação em Lote ──
         st.markdown("---")
         st.markdown('<p class="section-header">Importação em Lote</p>', unsafe_allow_html=True)
@@ -529,8 +531,7 @@ def render_page():
                 transacoes_data[mes_trans] = payload
                 data_service.save_transacoes(perfil_ativo, mes_trans, payload)
                 st.session_state.pop(f"editor_trans_{mes_trans}", None)
-                st.success(f"Lançamentos de {mes_trans} salvos!")
-                time.sleep(1)
+                st.session_state["_notify_success"] = f"Lançamentos de {mes_trans} salvos!"
                 st.rerun()
     
         with col_sav2:
@@ -572,13 +573,12 @@ def render_page():
                         try:
                             data_service.save_transacoes(perfil_ativo, mes_trans, todas)
                         except Exception as e:
-                            st.error(f"Erro ao salvar: {e}")
-                            st.stop()
+                            st.session_state["_notify_error"] = f"Erro ao salvar: {e}"
+                            st.rerun()
 
                         transacoes_data[mes_trans] = todas
                         st.session_state.pop(f"editor_trans_{mes_trans}", None)
-                        st.success("Atualizado!")
-                        time.sleep(1)
+                        st.session_state["_notify_success"] = "Atualizado!"
                         st.rerun()
     
     else:
@@ -603,8 +603,7 @@ def render_page():
         if cfg_raw:
             cfg_raw["Regras_IA"] = novas_regras.strip()
             st.session_state["cfg_raw"] = cfg_raw
-        st.success("Regras salvas e enviadas para a Inteligência Artificial!")
-        time.sleep(1)
+        st.session_state["_notify_success"] = "Regras salvas e enviadas para a Inteligência Artificial!"
         st.rerun()
     
     # ── Gastos Fixos Mensais ──
