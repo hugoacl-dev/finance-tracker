@@ -610,11 +610,11 @@ def render_page():
     st.markdown("---")
     st.markdown('<p class="section-header">Gastos Fixos Mensais</p>', unsafe_allow_html=True)
     
-    meses_config = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())))
-    
+    meses_config = sorted(set(list(mensal_data.keys()) + list(transacoes_data.keys())), key=mes_sort_key)
+
     if meses_config:
         mes_edit = st.selectbox("Selecione o mês para editar fixos", meses_config,
-                                key="config_mes_edit")
+                                index=len(meses_config) - 1, key="config_mes_edit")
     
         if mes_edit in mensal_data and mensal_data[mes_edit]:
             df_edit = pd.DataFrame(mensal_data[mes_edit])
