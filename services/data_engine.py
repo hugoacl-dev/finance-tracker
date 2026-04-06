@@ -1,3 +1,4 @@
+import inspect
 import pandas as pd
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
@@ -155,6 +156,11 @@ def process_idempotency_pass(
     buffers: dict[str, list[dict]],
     cond_match_func: Any,
 ) -> None:
+    try:
+        match_arity = len(inspect.signature(cond_match_func).parameters)
+    except (TypeError, ValueError):
+        match_arity = 3
+
     for t in trans_lista:
         if t.get('is_dupe') or t.get('dest_profile', '').startswith('Ign'):
             continue
@@ -179,7 +185,11 @@ def process_idempotency_pass(
             if c == e_c and tipo == e_t.get("Tipo", "debito"):
                 similarity = difflib.SequenceMatcher(None, normalize_text(d), normalize_text(e_d)).ratio()
                 price_diff = abs(v - e_v)
-                if cond_match_func(similarity, price_diff, v):
+                if match_arity <= 2:
+                    matched = cond_match_func(similarity, price_diff)
+                else:
+                    matched = cond_match_func(similarity, price_diff, v)
+                if matched:
                     t['is_dupe'] = True
                     buffers[prof].pop(idx)
                     break
