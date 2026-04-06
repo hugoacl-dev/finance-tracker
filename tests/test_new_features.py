@@ -24,6 +24,9 @@ from views.tab_raiox import (
     _build_interventions,
     _classify_cycle_status,
     _prepare_launch_table,
+    _render_cycle_kpis,
+    _render_category_ranking,
+    _render_launches,
 )
 
 
@@ -261,7 +264,110 @@ class TestRaioXHelpers:
         )
         filtered = full[full["Descricao"] == "Mercado fora"].copy()
         prepared = _prepare_launch_table(filtered, reference_ops=full)
+
         assert prepared.iloc[0]["Motivo do destaque"] == "Valor fora do padrão da categoria"
+    def test_render_categoria_responsiva_emite_bloco_mobile_e_desktop(self, monkeypatch):
+        captured = []
+
+        def fake_markdown(html, unsafe_allow_html=False):
+            captured.append(html)
+
+        monkeypatch.setattr("views.tab_raiox.st.markdown", fake_markdown)
+        ranking = pd.DataFrame(
+            [
+                {
+                    "Categoria": "Mercado",
+                    "Gasto": "R$ 500,00",
+                    "% dos debitos": "25.0%",
+                    "Referencia": "R$ 450,00",
+                    "Leitura": "Acima do limite",
+                }
+            ]
+        )
+        _render_category_ranking(ranking)
+        assert captured
+        assert "class=\"desktop-only\"" in captured[0]
+        assert "class=\"mobile-only\"" in captured[0]
+        assert "Mercado" in captured[0]
+
+    def test_render_lancamentos_responsivo_preserva_motivo(self, monkeypatch):
+        captured = []
+
+        def fake_markdown(html, unsafe_allow_html=False):
+            captured.append(html)
+
+        monkeypatch.setattr("views.tab_raiox.st.markdown", fake_markdown)
+        launches = pd.DataFrame(
+            [
+                {
+                    "Descricao": "Uber Trip",
+                    "Categoria": "Transporte",
+                    "Motivo do destaque": "Valor fora do padrão da categoria",
+                    "Valor": "R$ 80,00",
+                    "Cartao": "Nubank",
+                    "Tipo": "Debito",
+                }
+            ]
+        )
+        _render_launches(launches)
+        assert captured
+        assert "Uber Trip" in captured[0]
+        assert "Valor fora do padrão da categoria" in captured[0]
+        assert "class=\"mobile-stack-card\"" in captured[0]
+
+
+
+    def test_render_categoria_mobile_indica_quando_ha_mais_itens(self, monkeypatch):
+        captured = []
+
+        def fake_markdown(html, unsafe_allow_html=False):
+            captured.append(html)
+
+        monkeypatch.setattr("views.tab_raiox.st.markdown", fake_markdown)
+        ranking = pd.DataFrame(
+            [
+                {"Categoria": f"Cat {idx}", "Gasto": "R$ 10,00", "% dos debitos": "10.0%", "Referencia": "R$ 8,00", "Leitura": "Maior peso do ciclo"}
+                for idx in range(1, 6)
+            ]
+        )
+        _render_category_ranking(ranking)
+        assert "Mostrando as 4 categorias mais relevantes" in captured[0]
+
+    def test_render_lancamentos_mobile_mostra_resumo_quando_ha_muitos(self, monkeypatch):
+        captured = []
+
+        def fake_markdown(html, unsafe_allow_html=False):
+            captured.append(html)
+
+        monkeypatch.setattr("views.tab_raiox.st.markdown", fake_markdown)
+        launches = pd.DataFrame(
+            [
+                {"Descricao": f"Compra {idx}", "Categoria": "Mercado", "Motivo do destaque": "?", "Valor": "R$ 10,00", "Cartao": "Nubank", "Tipo": "Debito"}
+                for idx in range(10)
+            ]
+        )
+        _render_launches(launches)
+        assert "Mostrando os 8 lancamentos mais relevantes" in captured[0]
+
+    def test_render_kpis_emite_bloco_mobile_e_desktop(self, monkeypatch):
+        captured = []
+
+        def fake_markdown(html, unsafe_allow_html=False):
+            captured.append(html)
+
+        monkeypatch.setattr("views.tab_raiox.st.markdown", fake_markdown)
+        _render_cycle_kpis(
+            current={"total_variaveis": 500.0, "saldo_teto": 1200.0, "pct_teto": 72.0, "aporte_real": 3000.0, "df_ops": pd.DataFrame()},
+            meta_aporte=2500.0,
+            previous={"total_variaveis": 450.0, "aporte_real": 2800.0, "df_ops": pd.DataFrame()},
+            category_context={"credito_total": 100.0},
+            savings_rate=32.5,
+            receita_base=6000.0,
+        )
+        assert captured
+        assert "Folga do teto" in captured[0]
+        assert "Creditos/estornos" in captured[0]
+        assert 'class="mobile-only"' in captured[0]
 
     def test_tab_historico_importa_sazonalidade(self):
         assert "analisar_sazonalidade" in tab_historico.__dict__

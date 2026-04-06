@@ -1,6 +1,30 @@
 import streamlit as st
 
 
+def _hex_to_rgb(value: str) -> tuple[int, int, int] | None:
+    value = value.strip()
+    if not value.startswith("#"):
+        return None
+    raw = value[1:]
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    if len(raw) != 6:
+        return None
+    try:
+        return tuple(int(raw[idx : idx + 2], 16) for idx in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _is_dark_color(value: str) -> bool | None:
+    rgb = _hex_to_rgb(value)
+    if rgb is None:
+        return None
+    r, g, b = rgb
+    luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    return luminance < 0.5
+
+
 def _detect_theme() -> str:
     """Detecta o tema ativo do Streamlit (light ou dark)."""
     try:
@@ -9,7 +33,18 @@ def _detect_theme() -> str:
             return base
     except Exception:
         pass
-    return "dark"
+
+    try:
+        bg = st.get_option("theme.backgroundColor")
+        if bg:
+            inferred = _is_dark_color(bg)
+            if inferred is not None:
+                return "dark" if inferred else "light"
+    except Exception:
+        pass
+
+    # O fallback do Streamlit sem tema explícito é visualmente mais próximo do modo claro.
+    return "light"
 
 
 def render_styles():
@@ -20,29 +55,31 @@ def render_styles():
     if is_light:
         tokens = {
             "card_bg":          "#ffffff",
-            "card_bg2":         "#f1f5f9",
-            "border":           "#e2e8f0",
-            "border_strong":    "#cbd5e1",
-            "text":             "#1e293b",
-            "text_muted":       "#64748b",
-            "bar_bg":           "#e2e8f0",
-            "survival_grad":    "linear-gradient(135deg, #0284c7, #0ea5e9, #38bdf8)",
+            "card_bg2":         "#f6f8fc",
+            "state_bg":         "#f8fbff",
+            "border":           "#dbe4ee",
+            "border_strong":    "#c7d4e2",
+            "text":             "#0f172a",
+            "text_muted":       "#5b6b82",
+            "bar_bg":           "#e7edf5",
+            "survival_grad":    "linear-gradient(135deg, #0f5fa8, #1780c7, #38a3e8)",
             "survival_text":    "#ffffff",
-            "shadow":           "0 4px 24px rgba(0,0,0,.08)",
-            "shadow_sm":        "0 2px 12px rgba(0,0,0,.06)",
-            "accent":           "#0284c7",
-            "hover_bg":         "#f8fafc",
-            "badge_green_bg":   "rgba(22,163,74,.12)",
-            "badge_green_fg":   "#16a34a",
-            "badge_yellow_bg":  "rgba(202,138,4,.12)",
-            "badge_yellow_fg":  "#ca8a04",
-            "badge_red_bg":     "rgba(220,38,38,.12)",
-            "badge_red_fg":     "#dc2626",
+            "shadow":           "0 10px 28px rgba(15,23,42,.09)",
+            "shadow_sm":        "0 4px 16px rgba(15,23,42,.07)",
+            "accent":           "#0f6cbd",
+            "hover_bg":         "#f3f7fb",
+            "badge_green_bg":   "rgba(21,128,61,.12)",
+            "badge_green_fg":   "#15803d",
+            "badge_yellow_bg":  "rgba(180,83,9,.12)",
+            "badge_yellow_fg":  "#b45309",
+            "badge_red_bg":     "rgba(185,28,28,.12)",
+            "badge_red_fg":     "#b91c1c",
         }
     else:
         tokens = {
             "card_bg":          "#16162a",
             "card_bg2":         "#1f1f3a",
+            "state_bg":         "rgba(255,255,255,0.03)",
             "border":           "rgba(255,255,255,0.09)",
             "border_strong":    "rgba(255,255,255,0.22)",
             "text":             "#e0e0f0",
@@ -766,7 +803,7 @@ def render_styles():
         gap: .9rem;
     }}
     .state-item {{
-        background: rgba(255,255,255,0.03);
+        background: {t["state_bg"]};
         border: 1px solid {t["border"]};
         border-radius: 16px;
         padding: 1rem;
@@ -869,8 +906,243 @@ def render_styles():
         font-size: .9rem;
         line-height: 1.5;
     }}
+    .kpi-grid {{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .8rem;
+        margin-bottom: 1rem;
+    }}
+    .kpi-grid.mobile-kpi-grid {{
+        grid-template-columns: 1fr;
+        margin-bottom: .65rem;
+    }}
+    .kpi-card {{
+        background: linear-gradient(180deg, {t["card_bg"]}, {t["card_bg2"]});
+        border: 1px solid {t["border"]};
+        border-radius: 16px;
+        padding: .95rem 1rem;
+        box-shadow: {t["shadow_sm"]};
+    }}
+    .kpi-card.positive {{
+        border-left: 4px solid {t["badge_green_fg"]};
+    }}
+    .kpi-card.negative {{
+        border-left: 4px solid {t["badge_red_fg"]};
+    }}
+    .kpi-label {{
+        color: {t["text_muted"]};
+        font-size: .74rem;
+        letter-spacing: .45px;
+        text-transform: uppercase;
+        font-weight: 700;
+        margin-bottom: .35rem;
+    }}
+    .kpi-value {{
+        color: {t["text"]};
+        font-size: 1.45rem;
+        line-height: 1.15;
+        font-weight: 900;
+        margin-bottom: .2rem;
+    }}
+    .kpi-sub {{
+        display: block;
+        font-size: .82rem;
+        line-height: 1.45;
+    }}
+    .kpi-sub.positive {{
+        color: {t["badge_green_fg"]};
+    }}
+    .kpi-sub.negative {{
+        color: {t["badge_red_fg"]};
+    }}
+    .kpi-sub.neutral {{
+        color: {t["text_muted"]};
+    }}
+    .kpi-inline-summary {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem .8rem;
+        padding: .8rem .95rem;
+        border-radius: 14px;
+        border: 1px solid {t["border"]};
+        background: {t["card_bg"]};
+        color: {t["text_muted"]};
+        font-size: .82rem;
+        line-height: 1.45;
+        box-shadow: {t["shadow_sm"]};
+        margin-bottom: 1rem;
+    }}
+    .kpi-inline-summary strong {{
+        color: {t["text"]};
+    }}
+    .desktop-only {{
+        display: block;
+    }}
+    .mobile-only {{
+        display: none;
+    }}
+    .responsive-data-table {{
+        width: 100%;
+        border-collapse: collapse;
+        background: {t["card_bg"]};
+        border: 1px solid {t["border"]};
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: {t["shadow_sm"]};
+        margin-bottom: 1rem;
+    }}
+    .responsive-data-table thead {{
+        background: {t["card_bg2"]};
+    }}
+    .responsive-data-table th {{
+        color: {t["text_muted"]};
+        text-transform: uppercase;
+        font-size: .72rem;
+        letter-spacing: .7px;
+        text-align: left;
+        padding: .85rem .95rem;
+        white-space: nowrap;
+        border-bottom: 1px solid {t["border"]};
+    }}
+    .responsive-data-table td {{
+        color: {t["text"]};
+        font-size: .88rem;
+        line-height: 1.45;
+        padding: .85rem .95rem;
+        border-bottom: 1px solid {t["border"]};
+        vertical-align: top;
+    }}
+    .responsive-data-table tbody tr:last-child td {{
+        border-bottom: none;
+    }}
+    .responsive-data-table td.numeric {{
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }}
+    .responsive-data-table td.muted {{
+        color: {t["text_muted"]};
+    }}
+    .responsive-data-table td.strong {{
+        font-weight: 700;
+    }}
+    .responsive-data-table .table-chip {{
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .22rem .55rem;
+        border-radius: 999px;
+        background: {t["card_bg2"]};
+        border: 1px solid {t["border"]};
+        color: {t["text_muted"]};
+        font-size: .76rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }}
+    .responsive-data-table .credit-row td {{
+        color: {t["badge_green_fg"]};
+        background: {t["badge_green_bg"]};
+        font-weight: 600;
+    }}
+    .mobile-stack {{
+        display: grid;
+        gap: .7rem;
+        margin-bottom: 1rem;
+    }}
+    .mobile-stack-card {{
+        background: {t["card_bg"]};
+        border: 1px solid {t["border"]};
+        border-radius: 16px;
+        padding: .9rem .95rem;
+        box-shadow: {t["shadow_sm"]};
+    }}
+    .mobile-stack-head {{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .75rem;
+        margin-bottom: .55rem;
+    }}
+    .mobile-stack-title {{
+        color: {t["text"]};
+        font-size: .92rem;
+        line-height: 1.35;
+        font-weight: 800;
+        word-break: break-word;
+    }}
+    .mobile-stack-value {{
+        color: {t["text"]};
+        font-size: .96rem;
+        line-height: 1.2;
+        font-weight: 900;
+        text-align: right;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }}
+    .mobile-stack-value.positive {{
+        color: {t["badge_green_fg"]};
+    }}
+    .mobile-stack-grid {{
+        display: grid;
+        gap: .38rem;
+    }}
+    .mobile-stack-row {{
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .8rem;
+    }}
+    .mobile-stack-label {{
+        color: {t["text_muted"]};
+        font-size: .73rem;
+        text-transform: uppercase;
+        letter-spacing: .35px;
+        font-weight: 700;
+    }}
+    .mobile-stack-copy {{
+        color: {t["text"]};
+        font-size: .84rem;
+        line-height: 1.4;
+        text-align: right;
+        word-break: break-word;
+    }}
+    .mobile-stack-copy.muted {{
+        color: {t["text_muted"]};
+    }}
+    .mobile-stack-tags {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        margin-top: .35rem;
+    }}
+    .mobile-stack-tag {{
+        display: inline-flex;
+        align-items: center;
+        padding: .2rem .52rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+        border: 1px solid {t["border"]};
+        background: {t["card_bg2"]};
+        color: {t["text_muted"]};
+    }}
+    .mobile-stack-note {{
+        margin-top: .55rem;
+        color: {t["text_muted"]};
+        font-size: .81rem;
+        line-height: 1.45;
+    }}
+    .mobile-stack-footer {{
+        color: {t["text_muted"]};
+        font-size: .8rem;
+        line-height: 1.45;
+        margin: -.15rem 0 1rem 0;
+    }}
 
     @media (max-width: 768px) {{
+        .kpi-grid {{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }}
         .cycle-state-card {{
             padding: 1.15rem 1.1rem 1rem 1.1rem;
             border-radius: 18px;
@@ -898,6 +1170,12 @@ def render_styles():
     }}
 
     @media (max-width: 480px) {{
+        .desktop-only {{
+            display: none !important;
+        }}
+        .mobile-only {{
+            display: block !important;
+        }}
         .cycle-state-card {{
             padding: 1rem .95rem .9rem .95rem;
             border-radius: 14px;
@@ -975,6 +1253,48 @@ def render_styles():
         .score-note {{
             font-size: .82rem;
             line-height: 1.45;
+        }}
+        .mobile-stack {{
+            gap: .6rem;
+        }}
+        .mobile-stack-card {{
+            border-radius: 14px;
+            padding: .85rem .9rem;
+        }}
+        .kpi-value {{
+            font-size: 1.2rem;
+        }}
+        .kpi-sub {{
+            font-size: .78rem;
+        }}
+        .kpi-inline-summary {{
+            padding: .75rem .85rem;
+            font-size: .78rem;
+        }}
+        .mobile-stack-head {{
+            gap: .6rem;
+        }}
+        .mobile-stack-title {{
+            font-size: .88rem;
+        }}
+        .mobile-stack-value {{
+            font-size: .9rem;
+        }}
+        .mobile-stack-row {{
+            gap: .55rem;
+        }}
+        .mobile-stack-label {{
+            font-size: .69rem;
+        }}
+        .mobile-stack-copy {{
+            font-size: .8rem;
+        }}
+        .mobile-stack-note {{
+            font-size: .78rem;
+        }}
+        .mobile-stack-footer {{
+            font-size: .76rem;
+            margin-top: -.1rem;
         }}
     }}
     </style>

@@ -1,6 +1,7 @@
 import calendar
 import statistics
 from datetime import date, timedelta
+from html import escape
 
 import pandas as pd
 import plotly.express as px
@@ -15,6 +16,7 @@ from services.data_engine import (
     normalize_card_filter_list,
     processar_mes,
 )
+from views.styles import _detect_theme
 
 
 def _format_currency(value: float) -> str:
@@ -32,6 +34,37 @@ def _get_plotly_theme() -> tuple[str, str, str]:
         "rgba(0,0,0,0.08)" if is_light else "rgba(255,255,255,0.08)",
         "rgba(0,0,0,0)",
     )
+
+
+def _get_ui_palette() -> dict[str, str]:
+    is_light = _detect_theme() == "light"
+    if is_light:
+        return {
+            "positive_text": "#15803d",
+            "negative_text": "#b91c1c",
+            "neutral_text": "#0f172a",
+            "warning_gradient": "linear-gradient(90deg, #d97706, #f59e0b)",
+            "critical_gradient": "linear-gradient(90deg, #dc2626, #f97316)",
+            "positive_gradient": "linear-gradient(90deg, #0f766e, #22c55e)",
+            "radar_history_line": "#0f6cbd",
+            "radar_history_fill": "rgba(15, 108, 189, 0.18)",
+            "radar_current_line": "#b91c1c",
+            "radar_current_fill": "rgba(185, 28, 28, 0.18)",
+            "credit_row_style": "background-color: #dcfce726; color: #166534; font-weight: 600",
+        }
+    return {
+        "positive_text": "#22c55e",
+        "negative_text": "#ff5c5c",
+        "neutral_text": "inherit",
+        "warning_gradient": "linear-gradient(90deg, #f7971e, #ffd200)",
+        "critical_gradient": "linear-gradient(90deg, #ff416c, #ff4b2b)",
+        "positive_gradient": "linear-gradient(90deg, #00c9ff, #92fe9d)",
+        "radar_history_line": "#00c9ff",
+        "radar_history_fill": "rgba(0, 201, 255, 0.18)",
+        "radar_current_line": "#ff4b2b",
+        "radar_current_fill": "rgba(255, 75, 43, 0.28)",
+        "credit_row_style": "background-color: #14532d26; color: #22c55e; font-weight: 600",
+    }
 
 
 def _parse_cycle_period(mes_label: str, dia_fechamento: int) -> dict:
@@ -376,6 +409,182 @@ def _prepare_launch_table(df_ops: pd.DataFrame, reference_ops: pd.DataFrame | No
     return disp
 
 
+def _safe_text(value: object, fallback: str = "—") -> str:
+    if value is None:
+        return fallback
+    if isinstance(value, float) and pd.isna(value):
+        return fallback
+    text = str(value).strip()
+    return text if text else fallback
+
+
+def _render_category_ranking(category_ranking: pd.DataFrame) -> None:
+    if category_ranking.empty:
+        return
+
+    mobile_limit = 4
+    desktop_rows = []
+    mobile_cards = []
+    for idx, (_, row) in enumerate(category_ranking.iterrows()):
+        categoria = escape(_safe_text(row.get("Categoria")))
+        gasto = escape(_safe_text(row.get("Gasto")))
+        share = escape(_safe_text(row.get("% dos debitos")))
+        referencia = escape(_safe_text(row.get("Referencia")))
+        leitura = escape(_safe_text(row.get("Leitura")))
+        desktop_rows.append(
+            "<tr>"
+            f"<td class=\"strong\">{categoria}</td>"
+            f"<td class=\"numeric strong\">{gasto}</td>"
+            f"<td class=\"numeric\">{share}</td>"
+            f"<td class=\"numeric muted\">{referencia}</td>"
+            f"<td>{leitura}</td>"
+            "</tr>"
+        )
+        if idx >= mobile_limit:
+            continue
+        mobile_cards.append(
+            "<div class=\"mobile-stack-card\">"
+            "<div class=\"mobile-stack-head\">"
+            f"<div class=\"mobile-stack-title\">{categoria}</div>"
+            f"<div class=\"mobile-stack-value\">{gasto}</div>"
+            "</div>"
+            "<div class=\"mobile-stack-grid\">"
+            f"<div class=\"mobile-stack-row\"><span class=\"mobile-stack-label\">Peso</span><span class=\"mobile-stack-copy\">{share}</span></div>"
+            f"<div class=\"mobile-stack-row\"><span class=\"mobile-stack-label\">Referência</span><span class=\"mobile-stack-copy\">{referencia}</span></div>"
+            "</div>"
+            f"<div class=\"mobile-stack-note\">{leitura}</div>"
+            "</div>"
+        )
+
+    desktop_html = (
+        "<div class=\"desktop-only\">"
+        "<table class=\"responsive-data-table\">"
+        "<thead><tr><th>Categoria</th><th>Gasto</th><th>% dos débitos</th><th>Referência</th><th>Leitura</th></tr></thead>"
+        f"<tbody>{''.join(desktop_rows)}</tbody>"
+        "</table>"
+        "</div>"
+    )
+    footer = ""
+    if len(category_ranking) > mobile_limit:
+        footer = f'<div class="mobile-stack-footer">Mostrando as {mobile_limit} categorias mais relevantes. Abra os detalhes para ver o restante.</div>'
+    mobile_html = f"<div class=\"mobile-only\"><div class=\"mobile-stack\">{''.join(mobile_cards)}</div>{footer}</div>"
+    st.markdown(desktop_html + mobile_html, unsafe_allow_html=True)
+
+
+def _render_cycle_kpis(
+    current: dict,
+    meta_aporte: float,
+    previous: dict | None,
+    category_context: dict,
+    savings_rate: float,
+    receita_base: float,
+) -> None:
+    delta_variaveis = current["total_variaveis"] - previous["total_variaveis"] if previous else None
+    previous_credit_total = (
+        float(_get_credit_ops(previous["df_ops"])["Valor"].sum())
+        if previous is not None and not _get_credit_ops(previous["df_ops"]).empty
+        else 0.0
+    )
+    delta_creditos = category_context["credito_total"] - previous_credit_total if previous else None
+    delta_sr = savings_rate - ((previous["aporte_real"] / receita_base) * 100) if previous and receita_base > 0 else None
+    meta_delta = current["aporte_real"] - meta_aporte if meta_aporte > 0 else current["aporte_real"]
+
+    def _signed_currency(value: float | None) -> str:
+        if value is None:
+            return "Sem comparativo recente."
+        direction = "acima" if value > 0 else "abaixo" if value < 0 else "em linha"
+        return f"{_format_currency(abs(value))} {direction} do ciclo anterior."
+
+    meta_copy = "Meta de aporte nao definida."
+    if meta_aporte > 0:
+        meta_copy = f"{_format_currency(abs(meta_delta))} {'acima' if meta_delta >= 0 else 'abaixo'} da meta."
+
+    desktop_cards = [
+        ("Variaveis liquidas", _format_currency(current["total_variaveis"]), _signed_currency(delta_variaveis)),
+        ("Distancia da meta", _format_currency(abs(meta_delta)) if meta_aporte > 0 else _format_currency(current["aporte_real"]), meta_copy),
+        ("Creditos/estornos", _format_currency(category_context["credito_total"]), _signed_currency(delta_creditos)),
+        ("Savings rate", f"{savings_rate:.1f}%", f"{delta_sr:+.1f}pp vs ciclo anterior." if delta_sr is not None else "Sem comparativo recente."),
+    ]
+    mobile_cards = [
+        ("Folga do teto", _format_currency(current["saldo_teto"]), f'{current["pct_teto"]:.1f}% do teto consumido.', "positive" if current["saldo_teto"] >= 0 else "negative"),
+        ("Distancia da meta", _format_currency(abs(meta_delta)) if meta_aporte > 0 else _format_currency(current["aporte_real"]), "Meta batida ou acima." if meta_aporte > 0 and meta_delta >= 0 else "Meta abaixo do planejado." if meta_aporte > 0 else "Sem meta definida.", "positive" if meta_aporte <= 0 or meta_delta >= 0 else "negative"),
+        ("Variaveis liquidas", _format_currency(current["total_variaveis"]), "Ja considera creditos e estornos do ciclo.", "neutral"),
+    ]
+
+    desktop_html = '<div class="desktop-only"><div class="kpi-grid">' + "".join(
+        f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><span class="kpi-sub neutral">{copy}</span></div>'
+        for label, value, copy in desktop_cards
+    ) + "</div></div>"
+    mobile_html = '<div class="mobile-only"><div class="kpi-grid mobile-kpi-grid">' + "".join(
+        f'<div class="kpi-card {tone}"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div><span class="kpi-sub neutral">{copy}</span></div>'
+        for label, value, copy, tone in mobile_cards
+    ) + f'</div><div class="kpi-inline-summary"><span>Creditos/estornos: <strong>{_format_currency(category_context["credito_total"])}</strong></span><span>Savings rate: <strong>{savings_rate:.1f}%</strong></span></div></div>'
+    st.markdown(desktop_html + mobile_html, unsafe_allow_html=True)
+
+
+def _render_launches(disp: pd.DataFrame) -> None:
+    if disp.empty:
+        st.info("Nenhum lançamento atende aos filtros atuais.")
+        return
+
+    mobile_limit = 8
+    desktop_rows = []
+    mobile_cards = []
+    empty_marker = _safe_text(None)
+    for idx, (_, row) in enumerate(disp.iterrows()):
+        descricao = escape(_safe_text(row.get("Descricao")))
+        categoria = escape(_safe_text(row.get("Categoria")))
+        motivo = escape(_safe_text(row.get("Motivo do destaque")))
+        valor = escape(_safe_text(row.get("Valor")))
+        cartao = escape(_safe_text(row.get("Cartao")))
+        tipo = escape(_safe_text(row.get("Tipo")))
+        is_credit = "credito" in tipo.lower()
+        reason_html = "" if motivo == empty_marker else f"<div class=\"mobile-stack-note\"><strong>Motivo:</strong> {motivo}</div>"
+        desktop_rows.append(
+            f"<tr class=\"{'credit-row' if is_credit else ''}\">"
+            f"<td class=\"strong\">{descricao}</td>"
+            f"<td>{categoria}</td>"
+            f"<td class=\"muted\">{motivo}</td>"
+            f"<td class=\"numeric strong\">{valor}</td>"
+            f"<td>{cartao}</td>"
+            f"<td>{tipo}</td>"
+            "</tr>"
+        )
+        if idx >= mobile_limit:
+            continue
+        tags = [categoria]
+        if cartao != empty_marker:
+            tags.append(cartao)
+        if is_credit:
+            tags.append(tipo)
+        mobile_cards.append(
+            "<div class=\"mobile-stack-card\">"
+            "<div class=\"mobile-stack-head\">"
+            f"<div class=\"mobile-stack-title\">{descricao}</div>"
+            f"<div class=\"mobile-stack-value{' positive' if is_credit else ''}\">{valor}</div>"
+            "</div>"
+            "<div class=\"mobile-stack-tags\">"
+            + "".join(f'<span class="mobile-stack-tag">{tag}</span>' for tag in tags)
+            + "</div>"
+            + f"{reason_html}"
+            + "</div>"
+        )
+
+    desktop_html = (
+        "<div class=\"desktop-only\">"
+        "<table class=\"responsive-data-table\">"
+        "<thead><tr><th>Descrição</th><th>Categoria</th><th>Motivo do destaque</th><th>Valor</th><th>Cartão</th><th>Tipo</th></tr></thead>"
+        f"<tbody>{''.join(desktop_rows)}</tbody>"
+        "</table>"
+        "</div>"
+    )
+    footer = ""
+    if len(disp) > mobile_limit:
+        footer = f'<div class="mobile-stack-footer">Mostrando os {mobile_limit} lancamentos mais relevantes. Use busca ou filtro para refinar a analise.</div>'
+    mobile_html = f"<div class=\"mobile-only\"><div class=\"mobile-stack\">{''.join(mobile_cards)}</div>{footer}</div>"
+    st.markdown(desktop_html + mobile_html, unsafe_allow_html=True)
+
+
 def render_page():
     cfg = st.session_state.get("cfg", {})
     transacoes_data = st.session_state.get("transacoes_data", {})
@@ -383,6 +592,7 @@ def render_page():
     category_budgets = st.session_state.get("category_budgets_data", {}) or {}
     perfil_ativo = st.session_state.get("perfil_ativo", "Principal")
     plotly_template, _, plotly_bg = _get_plotly_theme()
+    ui_palette = _get_ui_palette()
 
     months = sorted(list(transacoes_data.keys()), key=mes_sort_key)
     if not months:
@@ -468,21 +678,18 @@ def render_page():
                     _render_intervention(card, action_label)
 
     st.markdown('<p class="section-header">KPIs do Ciclo</p>', unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    delta_variaveis = current["total_variaveis"] - previous["total_variaveis"] if previous else None
-    previous_credit_total = float(_get_credit_ops(previous["df_ops"])["Valor"].sum()) if previous is not None and not _get_credit_ops(previous["df_ops"]).empty else 0.0
-    delta_creditos = category_context["credito_total"] - previous_credit_total if previous else None
-    delta_sr = savings_rate - ((previous["aporte_real"] / receita_base) * 100) if previous and receita_base > 0 else None
-    meta_delta = current["aporte_real"] - meta_aporte if meta_aporte > 0 else current["aporte_real"]
-    c1.metric("Variáveis líquidas", _format_currency(current["total_variaveis"]), delta=f"R$ {delta_variaveis:+,.0f} vs anterior" if delta_variaveis is not None else None, delta_color="inverse" if delta_variaveis and delta_variaveis > 0 else "normal")
-    c2.metric("Distância da meta", _format_currency(abs(meta_delta)) if meta_aporte > 0 else _format_currency(current["aporte_real"]), delta="Acima da meta" if meta_aporte > 0 and meta_delta >= 0 else "Abaixo da meta" if meta_aporte > 0 else "Sem meta definida", delta_color="normal" if meta_delta >= 0 else "inverse")
-    c3.metric("Créditos/estornos", _format_currency(category_context["credito_total"]), delta=f"R$ {delta_creditos:+,.0f} vs anterior" if delta_creditos is not None else None, delta_color="normal")
-    c4.metric("Savings Rate", f"{savings_rate:.1f}%", delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None, delta_color="off" if status["label"] != "Controlado" else "normal")
+    _render_cycle_kpis(current, meta_aporte, previous, category_context, savings_rate, receita_base)
 
     st.markdown('<p class="section-header">Resumo do Orçamento</p>', unsafe_allow_html=True)
     summary_html = '<table class="summary-table"><tbody>'
     for row in budget_snapshot["rows"]:
-        color = "#22c55e" if row["tone"] == "positive" else "#ff5c5c" if row["tone"] == "negative" else "inherit"
+        color = (
+            ui_palette["positive_text"]
+            if row["tone"] == "positive"
+            else ui_palette["negative_text"]
+            if row["tone"] == "negative"
+            else ui_palette["neutral_text"]
+        )
         value_markup = _format_currency(row["value"])
         if row["strong"]:
             summary_html += f'<tr><td><strong>{row["label"]}</strong></td><td style="text-align:right; color:{color};"><strong>{value_markup}</strong></td></tr>'
@@ -506,9 +713,9 @@ def render_page():
                 st.dataframe(df_show.style.format({"Valor": "R$ {:,.2f}"}), use_container_width=True, hide_index=True)
 
     if not category_context["top_categorias_relevantes"].empty:
-        st.markdown('<p class="section-header">Categorias que Mais Pressionam o Ciclo</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">Alvos de Ajuste por Categoria</p>', unsafe_allow_html=True)
         if not category_ranking.empty:
-            st.dataframe(category_ranking, use_container_width=True, hide_index=True)
+            _render_category_ranking(category_ranking)
         chart_data = category_context["top_categorias_relevantes"].reset_index()
         chart_data.columns = ["Categoria", "Valor"]
         with st.expander("Abrir visualização gráfica das categorias", expanded=False):
@@ -530,12 +737,18 @@ def render_page():
                     st.info("Sem detalhe suficiente para montar a visão expandida deste ciclo.")
 
     if category_context["controles_categoria"]:
-        st.markdown('<p class="section-header">Limites e Referências por Categoria</p>', unsafe_allow_html=True)
-        for item in category_context["controles_categoria"]:
-            pct_visual = min(item["pct"], 100)
-            color = "linear-gradient(90deg, #ff416c, #ff4b2b)" if item["pct"] >= 100 else "linear-gradient(90deg, #f7971e, #ffd200)" if item["pct"] >= 80 else "linear-gradient(90deg, #00c9ff, #92fe9d)"
-            icon = "🔴" if item["pct"] >= 100 else "🟡" if item["pct"] >= 80 else "🟢"
-            st.markdown(f'<div class="cat-gauge-label"><span>{icon} <strong>{item["categoria"]}</strong> <small style="opacity:.55">({item["fonte"]})</small></span><span>{_format_currency(item["atual"])} / {_format_currency(item["referencia"])} ({item["pct"]:.1f}%)</span></div><div class="progress-outer" style="height:20px; margin-bottom:1rem;"><div class="progress-inner" style="width:{pct_visual:.1f}%; background:{color}; font-size:.75rem; padding-right:8px;">{item["pct"]:.0f}%</div></div>', unsafe_allow_html=True)
+        with st.expander("Ver referencias e limites por categoria", expanded=False):
+            for item in category_context["controles_categoria"]:
+                pct_visual = min(item["pct"], 100)
+                color = (
+                    ui_palette["critical_gradient"]
+                    if item["pct"] >= 100
+                    else ui_palette["warning_gradient"]
+                    if item["pct"] >= 80
+                    else ui_palette["positive_gradient"]
+                )
+                icon = "ALTO" if item["pct"] >= 100 else "ATEN" if item["pct"] >= 80 else "OK"
+                st.markdown(f'<div class="cat-gauge-label"><span>{icon} <strong>{item["categoria"]}</strong> <small style="opacity:.55">({item["fonte"]})</small></span><span>{_format_currency(item["atual"])} / {_format_currency(item["referencia"])} ({item["pct"]:.1f}%)</span></div><div class="progress-outer" style="height:20px; margin-bottom:1rem;"><div class="progress-inner" style="width:{pct_visual:.1f}%; background:{color}; font-size:.75rem; padding-right:8px;">{item["pct"]:.0f}%</div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="section-header">Score Financeiro</p>', unsafe_allow_html=True)
     score_note = "Indicador composto; use como apoio, não como diagnóstico principal."
@@ -548,7 +761,13 @@ def render_page():
         for pillar, points in score_data["pilares"].items():
             maximum = {"Savings Rate": 30, "Aderência ao Teto": 25, "Meta de Aporte": 20, "Consistência": 15, "Organização": 10}.get(pillar, 10)
             pct = (points / maximum) * 100 if maximum else 0
-            color = "linear-gradient(90deg, #00c9ff, #92fe9d)" if pct >= 70 else "linear-gradient(90deg, #f7971e, #ffd200)" if pct >= 50 else "linear-gradient(90deg, #ff416c, #ff4b2b)"
+            color = (
+                ui_palette["positive_gradient"]
+                if pct >= 70
+                else ui_palette["warning_gradient"]
+                if pct >= 50
+                else ui_palette["critical_gradient"]
+            )
             st.markdown(f'<div class="cat-gauge-label"><span>{pillar}</span><span>{points}/{maximum}</span></div><div class="progress-outer" style="height:16px; margin-bottom:.75rem;"><div class="progress-inner" style="width:{pct:.0f}%; background:{color}; font-size:.7rem;"></div></div>', unsafe_allow_html=True)
 
     if len(category_context["radar"]) >= 3:
@@ -558,8 +777,8 @@ def render_page():
             history_values = [item[2] for item in category_context["radar"]]
             max_value = max(max(current_values, default=0), max(history_values, default=0), 1)
             fig_radar = go.Figure()
-            fig_radar.add_trace(go.Scatterpolar(r=history_values + [history_values[0]], theta=categories + [categories[0]], fill="toself", name="Média histórica", line_color="#00c9ff", fillcolor="rgba(0, 201, 255, 0.18)"))
-            fig_radar.add_trace(go.Scatterpolar(r=current_values + [current_values[0]], theta=categories + [categories[0]], fill="toself", name=f"Atual ({mes_sel})", line_color="#ff4b2b", fillcolor="rgba(255, 75, 43, 0.28)"))
+            fig_radar.add_trace(go.Scatterpolar(r=history_values + [history_values[0]], theta=categories + [categories[0]], fill="toself", name="Média histórica", line_color=ui_palette["radar_history_line"], fillcolor=ui_palette["radar_history_fill"]))
+            fig_radar.add_trace(go.Scatterpolar(r=current_values + [current_values[0]], theta=categories + [categories[0]], fill="toself", name=f"Atual ({mes_sel})", line_color=ui_palette["radar_current_line"], fillcolor=ui_palette["radar_current_fill"]))
             fig_radar.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, polar=dict(radialaxis=dict(visible=True, range=[0, max_value * 1.15], showticklabels=False)), showlegend=True, height=420, margin=dict(t=30, b=30, l=30, r=30))
             st.plotly_chart(fig_radar, use_container_width=True)
 
@@ -581,16 +800,12 @@ def render_page():
     if disp.empty:
         st.info("Nenhum lançamento atende aos filtros atuais.")
         return
-    disp = disp.sort_values("_peso", ascending=False)
-    credit_idx = set(disp.index[disp["Tipo"] == "credito"].tolist()) if "Tipo" in disp.columns else set()
-    reason_col = ["Motivo do destaque"] if "Motivo do destaque" in disp.columns and (disp["Motivo do destaque"] != "—").any() else []
-    display_cols = [c for c in ["Descricao", "Categoria", *reason_col, "Valor", "Cartao", "Tipo"] if c in disp.columns]
-    disp = disp[display_cols]
-    disp["Valor"] = disp["Valor"].map(lambda value: _format_currency(float(value)) if isinstance(value, (int, float)) else value)
-    if "Tipo" in disp.columns:
-        disp["Tipo"] = disp["Tipo"].map(lambda item: "↩ Crédito" if item == "credito" else "↓ Débito")
-
-    def _highlight_credit(row):
-        return ["background-color: #14532d26; color: #22c55e; font-weight: 600"] * len(row) if row.name in credit_idx else [""] * len(row)
-
-    st.dataframe(disp.style.apply(_highlight_credit, axis=1).hide(axis="index"), use_container_width=True)
+    launch_view = disp.sort_values("_peso", ascending=False)
+    empty_marker = _safe_text(None)
+    reason_col = ["Motivo do destaque"] if "Motivo do destaque" in launch_view.columns and launch_view["Motivo do destaque"].map(_safe_text).ne(empty_marker).any() else []
+    display_cols = [c for c in ["Descricao", "Categoria", *reason_col, "Valor", "Cartao", "Tipo"] if c in launch_view.columns]
+    launch_view = launch_view[display_cols].copy()
+    launch_view["Valor"] = launch_view["Valor"].map(lambda value: _format_currency(float(value)) if isinstance(value, (int, float)) else value)
+    if "Tipo" in launch_view.columns:
+        launch_view["Tipo"] = launch_view["Tipo"].map(lambda item: "Credito" if item == "credito" else "Debito")
+    _render_launches(launch_view)
