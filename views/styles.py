@@ -382,6 +382,30 @@ def render_styles():
         .summary-table td {{ padding: 11px 14px; font-size: .88rem; }}
 
         div[data-testid="stMetric"] {{ padding: 1rem; }}
+        .cycle-state-card {{
+            padding: 1.15rem 1.1rem 1rem 1.1rem;
+            border-radius: 18px;
+        }}
+        .state-grid {{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .75rem;
+        }}
+        .state-grid .state-item:last-child {{
+            grid-column: 1 / -1;
+        }}
+        .state-value {{
+            font-size: clamp(1.35rem, 4vw, 1.8rem);
+        }}
+        .state-summary {{
+            font-size: .9rem;
+            line-height: 1.5;
+        }}
+        .intervention-card {{
+            padding: .95rem 1rem;
+        }}
+        .score-topline {{
+            align-items: flex-start;
+        }}
 
         /* Gauges: impedir truncamento do label */
         .cat-gauge-label {{
@@ -501,6 +525,50 @@ def render_styles():
             gap: 0 .3rem;
         }}
 
+        .cycle-state-card {{
+            padding: 1rem .95rem .9rem .95rem;
+            border-radius: 14px;
+        }}
+        .state-topline {{
+            flex-direction: column;
+            align-items: flex-start;
+            gap: .45rem;
+            margin-bottom: .75rem;
+        }}
+        .state-cycle {{
+            font-size: .72rem;
+            letter-spacing: .45px;
+        }}
+        .state-grid {{
+            grid-template-columns: 1fr;
+            gap: .65rem;
+        }}
+        .state-grid .state-item:last-child {{
+            grid-column: auto;
+        }}
+        .state-item {{
+            padding: .85rem .9rem;
+            border-radius: 14px;
+        }}
+        .state-label {{
+            font-size: .68rem;
+            letter-spacing: .3px;
+            margin-bottom: .25rem;
+        }}
+        .state-value {{
+            font-size: clamp(1.3rem, 7vw, 1.9rem);
+            word-break: break-word;
+        }}
+        .state-sub {{
+            font-size: .75rem;
+            line-height: 1.35;
+        }}
+        .state-summary {{
+            margin-top: .8rem;
+            font-size: .88rem;
+            line-height: 1.5;
+        }}
+
         /* ── Badges: larger touch targets ── */
         .badge {{
             padding: 5px 12px;
@@ -523,6 +591,43 @@ def render_styles():
         /* ── Sidebar: auto collapse on mobile ── */
         section[data-testid="stSidebar"] {{
             min-width: 0 !important;
+        }}
+
+        .intervention-card {{
+            padding: .9rem .95rem;
+            border-radius: 14px;
+            margin-bottom: .65rem;
+        }}
+        .intervention-title {{
+            font-size: .9rem;
+            line-height: 1.35;
+        }}
+        .intervention-line {{
+            font-size: .82rem;
+            line-height: 1.45;
+        }}
+
+        .score-panel {{
+            padding: .9rem .95rem;
+            border-radius: 14px;
+        }}
+        .score-topline {{
+            flex-direction: column;
+            align-items: flex-start;
+            gap: .45rem;
+        }}
+        .score-chip {{
+            width: 100%;
+            justify-content: center;
+            text-align: center;
+        }}
+        .score-copy {{
+            font-size: .88rem;
+            line-height: 1.35;
+        }}
+        .score-note {{
+            font-size: .82rem;
+            line-height: 1.45;
         }}
 
         /* ── Inputs & Buttons: min 44px touch target ── */
@@ -558,10 +663,25 @@ def render_styles():
         }}
 
         /* ── Score badge: full-width on mobile ── */
-        .badge[style*="font-size:1.1rem"] {{
-            display: block !important;
-            text-align: center;
-            padding: 8px 12px !important;
+        div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            gap: .25rem;
+        }}
+        div[data-testid="stTabs"] [data-baseweb="tab-list"]::-webkit-scrollbar {{
+            display: none;
+        }}
+        div[data-testid="stTabs"] button[data-baseweb="tab"] {{
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }}
+
+        div[data-testid="stPlotlyChart"] {{
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }}
 
         /* ── Form columns: stack vertically ── */
@@ -748,6 +868,114 @@ def render_styles():
         color: {t["text_muted"]};
         font-size: .9rem;
         line-height: 1.5;
+    }}
+
+    @media (max-width: 768px) {{
+        .cycle-state-card {{
+            padding: 1.15rem 1.1rem 1rem 1.1rem;
+            border-radius: 18px;
+        }}
+        .state-grid {{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .75rem;
+        }}
+        .state-grid .state-item:last-child {{
+            grid-column: 1 / -1;
+        }}
+        .state-value {{
+            font-size: clamp(1.35rem, 4vw, 1.8rem);
+        }}
+        .state-summary {{
+            font-size: .9rem;
+            line-height: 1.5;
+        }}
+        .intervention-card {{
+            padding: .95rem 1rem;
+        }}
+        .score-topline {{
+            align-items: flex-start;
+        }}
+    }}
+
+    @media (max-width: 480px) {{
+        .cycle-state-card {{
+            padding: 1rem .95rem .9rem .95rem;
+            border-radius: 14px;
+        }}
+        .state-topline {{
+            flex-direction: column;
+            align-items: flex-start;
+            gap: .45rem;
+            margin-bottom: .75rem;
+        }}
+        .state-cycle {{
+            font-size: .72rem;
+            letter-spacing: .45px;
+        }}
+        .state-grid {{
+            grid-template-columns: 1fr;
+            gap: .65rem;
+        }}
+        .state-grid .state-item:last-child {{
+            grid-column: auto;
+        }}
+        .state-item {{
+            padding: .85rem .9rem;
+            border-radius: 14px;
+        }}
+        .state-label {{
+            font-size: .68rem;
+            letter-spacing: .3px;
+            margin-bottom: .25rem;
+        }}
+        .state-value {{
+            font-size: clamp(1.3rem, 7vw, 1.9rem);
+            word-break: break-word;
+        }}
+        .state-sub {{
+            font-size: .75rem;
+            line-height: 1.35;
+        }}
+        .state-summary {{
+            margin-top: .8rem;
+            font-size: .88rem;
+            line-height: 1.5;
+        }}
+        .intervention-card {{
+            padding: .9rem .95rem;
+            border-radius: 14px;
+            margin-bottom: .65rem;
+        }}
+        .intervention-title {{
+            font-size: .9rem;
+            line-height: 1.35;
+        }}
+        .intervention-line {{
+            font-size: .82rem;
+            line-height: 1.45;
+        }}
+        .score-panel {{
+            padding: .9rem .95rem;
+            border-radius: 14px;
+        }}
+        .score-topline {{
+            flex-direction: column;
+            align-items: flex-start;
+            gap: .45rem;
+        }}
+        .score-chip {{
+            width: 100%;
+            justify-content: center;
+            text-align: center;
+        }}
+        .score-copy {{
+            font-size: .88rem;
+            line-height: 1.35;
+        }}
+        .score-note {{
+            font-size: .82rem;
+            line-height: 1.45;
+        }}
     }}
     </style>
     """, unsafe_allow_html=True)
