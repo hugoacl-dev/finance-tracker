@@ -713,6 +713,42 @@ def render_styles():
     .intervention-line strong {{
         color: {t["text"]};
     }}
+    .score-panel {{
+        border: 1px solid {t["border"]};
+        background: linear-gradient(180deg, {t["card_bg"]}, {t["card_bg2"]});
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+    }}
+    .score-topline {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .8rem;
+        flex-wrap: wrap;
+        margin-bottom: .45rem;
+    }}
+    .score-chip {{
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: .3rem .75rem;
+        font-size: .82rem;
+        font-weight: 800;
+        color: {t["text"]};
+        background: {t["card_bg2"]};
+        border: 1px solid {t["border"]};
+    }}
+    .score-copy {{
+        color: {t["text"]};
+        font-size: .95rem;
+        font-weight: 700;
+    }}
+    .score-note {{
+        color: {t["text_muted"]};
+        font-size: .9rem;
+        line-height: 1.5;
+    }}
     </style>
     """, unsafe_allow_html=True)
 

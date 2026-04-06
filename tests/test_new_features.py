@@ -19,9 +19,11 @@ from services.forecasting import (
 )
 from views import tab_historico
 from views.tab_raiox import (
+    _build_budget_snapshot,
     _build_category_context,
     _build_interventions,
     _classify_cycle_status,
+    _prepare_launch_table,
 )
 
 
@@ -119,6 +121,31 @@ class TestNormalizeCardFilterList:
 
 
 class TestRaioXHelpers:
+    def test_resumo_orcamento_detalha_creditos_sem_quebrar_total_liquido(self):
+        snapshot = _build_budget_snapshot(
+            {
+                "total_fixos": 100.0,
+                "total_variaveis": 80.0,
+                "total_comprometido": 180.0,
+                "saldo_teto": 20.0,
+                "aporte_real": 320.0,
+                "meta_ameacada": False,
+            },
+            {
+                "gasto_debito_por_categoria": pd.Series({"Compras": 100.0}),
+                "credito_total": 20.0,
+            },
+            250.0,
+        )
+        labels = [row["label"] for row in snapshot["rows"]]
+        assert "Debitos variaveis" in labels
+        assert "Creditos/estornos" in labels
+        assert "Variaveis liquidas do ciclo" in labels
+        credit_row = next(row for row in snapshot["rows"] if row["label"] == "Creditos/estornos")
+        net_row = next(row for row in snapshot["rows"] if row["label"] == "Variaveis liquidas do ciclo")
+        assert credit_row["value"] == -20.0
+        assert net_row["value"] == 80.0
+
     def test_contexto_categoria_ignora_creditos_para_gasto(self):
         current = {
             "df_ops": pd.DataFrame(
@@ -190,8 +217,29 @@ class TestRaioXHelpers:
                 "categorias_acima_do_limite": [{"categoria": "Lazer", "limite": 200.0, "atual": 350.0, "excesso": 150.0}],
                 "anomalias_relevantes": [{"categoria": "Transporte", "atual": 400.0, "media": 180.0, "pct": 122.0}],
             },
+            True,
         )
         assert [card["priority"] for card in cards[:4]] == [1, 2, 3, 4]
+
+    def test_intervencoes_fechadas_nao_pedem_acao_imediata_de_conciliacao(self):
+        cards = _build_interventions(
+            False,
+            {
+                "saldo_teto": 50.0,
+                "saldo_variaveis": 20.0,
+                "meta_ameacada": False,
+                "aporte_real": 1200.0,
+                "df_config": pd.DataFrame(
+                    [{"Tipo": "Cartao", "Status_Conciliacao": "⏳ Pendente", "Valor": 55.0, "Descricao_Fatura": "Streaming"}]
+                ),
+            },
+            1000.0,
+            0,
+            0,
+            {"categorias_acima_do_limite": [], "anomalias_relevantes": []},
+            False,
+        )
+        assert cards == []
 
     def test_contexto_suprime_insights_sem_historico_suficiente(self):
         current = {
@@ -205,6 +253,15 @@ class TestRaioXHelpers:
         context = _build_category_context(current, previous, {})
         assert context["anomalias_relevantes"] == []
         assert context["radar"] == []
+
+    def test_motivo_do_destaque_usa_contexto_completo_do_ciclo(self):
+        full = pd.DataFrame(
+            [{"Descricao": f"Mercado {idx}", "Categoria": "Mercado", "Valor": 10.0, "Tipo": "debito"} for idx in range(1, 8)]
+            + [{"Descricao": "Mercado fora", "Categoria": "Mercado", "Valor": 100.0, "Tipo": "debito"}]
+        )
+        filtered = full[full["Descricao"] == "Mercado fora"].copy()
+        prepared = _prepare_launch_table(filtered, reference_ops=full)
+        assert prepared.iloc[0]["Motivo do destaque"] == "Valor fora do padrão da categoria"
 
     def test_tab_historico_importa_sazonalidade(self):
         assert "analisar_sazonalidade" in tab_historico.__dict__

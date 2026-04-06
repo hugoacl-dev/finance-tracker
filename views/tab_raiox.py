@@ -174,6 +174,79 @@ def _build_category_context(current: dict, previous_results: list[dict], budgets
     }
 
 
+def _build_budget_snapshot(current: dict, category_context: dict, meta_aporte: float) -> dict:
+    debit_totals = category_context["gasto_debito_por_categoria"]
+    if hasattr(debit_totals, "empty") and not debit_totals.empty:
+        debit_variable_total = float(debit_totals.sum())
+    else:
+        debit_variable_total = max(float(current["total_variaveis"]), 0.0)
+    credit_total = float(category_context["credito_total"])
+
+    rows = [
+        {"label": "Total Fixos", "value": float(current["total_fixos"]), "tone": "default", "strong": True},
+    ]
+    if credit_total > 0:
+        rows.extend(
+            [
+                {"label": "Debitos variaveis", "value": debit_variable_total, "tone": "default", "strong": False},
+                {"label": "Creditos/estornos", "value": -credit_total, "tone": "positive", "strong": False},
+                {"label": "Variaveis liquidas do ciclo", "value": float(current["total_variaveis"]), "tone": "default", "strong": False},
+            ]
+        )
+    else:
+        rows.append({"label": "Variaveis do ciclo", "value": float(current["total_variaveis"]), "tone": "default", "strong": False})
+
+    rows.extend(
+        [
+            {"label": "Total Comprometido", "value": float(current["total_comprometido"]), "tone": "default", "strong": True},
+            {"label": "Saldo restante do teto", "value": float(current["saldo_teto"]), "tone": "default", "strong": False},
+            {"label": "Meta de aporte", "value": float(meta_aporte), "tone": "default", "strong": False},
+            {
+                "label": "Aporte projetado",
+                "value": float(current["aporte_real"]),
+                "tone": "positive" if not current["meta_ameacada"] else "negative",
+                "strong": True,
+            },
+        ]
+    )
+    return {
+        "rows": rows,
+        "debit_variable_total": debit_variable_total,
+        "credit_total": credit_total,
+    }
+
+
+def _build_category_ranking(category_context: dict) -> pd.DataFrame:
+    totals = category_context["gasto_debito_por_categoria"]
+    if totals.empty:
+        return pd.DataFrame()
+
+    total_debito = float(totals.sum()) or 1.0
+    controls_map = {item["categoria"]: item for item in category_context["controles_categoria"]}
+    over_budget = {item["categoria"]: item for item in category_context["categorias_acima_do_limite"]}
+    anomaly_map = {item["categoria"]: item for item in category_context["anomalias_relevantes"]}
+    rows = []
+    for categoria, valor in totals.head(6).items():
+        control = controls_map.get(categoria)
+        referencia = control["referencia"] if control else 0.0
+        if categoria in over_budget:
+            leitura = "Acima do limite"
+        elif categoria in anomaly_map:
+            leitura = "Acima do padrao"
+        else:
+            leitura = "Maior peso do ciclo"
+        rows.append(
+            {
+                "Categoria": categoria,
+                "Gasto": _format_currency(float(valor)),
+                "% dos debitos": f"{(float(valor) / total_debito) * 100:.1f}%",
+                "Referencia": _format_currency(float(referencia)) if referencia > 0 else "-",
+                "Leitura": leitura,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _classify_cycle_status(config_invalid: bool, result: dict, meta_aporte: float, pct_outros: float, ritmo_pct: float | None, category_context: dict) -> dict:
     meta_gap = meta_aporte - result["aporte_real"]
     if result["saldo_teto"] < 0 or result["saldo_variaveis"] < 0 or (meta_aporte > 0 and meta_gap > max(500.0, meta_aporte * 0.1)):
@@ -183,7 +256,21 @@ def _classify_cycle_status(config_invalid: bool, result: dict, meta_aporte: floa
     return {"label": "Controlado", "pill": "status-positive"}
 
 
-def _build_cycle_summary(status: dict, result: dict, meta_aporte: float, ritmo_diario: float | None, days_remaining: int, category_context: dict, pct_outros: float) -> str:
+def _build_cycle_summary(status: dict, result: dict, meta_aporte: float, ritmo_diario: float | None, days_remaining: int, category_context: dict, pct_outros: float, is_active: bool) -> str:
+    if not is_active:
+        if status["label"] == "Crítico":
+            if result["saldo_teto"] < 0:
+                return f"Este ciclo fechou acima do teto em {_format_currency(abs(result['saldo_teto']))}. Use esse excesso como ajuste de partida para o próximo fechamento."
+            if result["saldo_variaveis"] < 0:
+                return "O ciclo fechou com variáveis acima da margem planejada. O próximo fechamento precisa começar com um teto mais protegido."
+            return f"O ciclo terminou {_format_currency(meta_aporte - result['aporte_real'])} abaixo da meta de aporte. Vale revisar onde a folga se perdeu."
+        if status["label"] == "Em atenção":
+            if category_context["categorias_acima_do_limite"]:
+                top = category_context["categorias_acima_do_limite"][0]
+                return f"{top['categoria']} foi a principal fonte de pressão, com {_format_currency(top['excesso'])} acima da referência do ciclo."
+            if pct_outros > 0:
+                return f"{pct_outros:.0f}% dos débitos ainda estão sem categoria útil. Isso reduz a precisão do diagnóstico."
+            return "O fechamento ficou dentro do possível, mas com sinais de pressão que merecem ajuste fino no próximo ciclo."
     if status["label"] == "Crítico":
         if result["saldo_teto"] < 0:
             return f"Você já ultrapassou o teto em {_format_currency(abs(result['saldo_teto']))}. O foco agora é cortar saídas variáveis imediatamente."
@@ -204,7 +291,25 @@ def _build_cycle_summary(status: dict, result: dict, meta_aporte: float, ritmo_d
     return "O resultado final do ciclo ficou dentro dos parâmetros principais do planejamento."
 
 
-def _build_interventions(config_invalid: bool, result: dict, meta_aporte: float, days_remaining: int, qtd_outros: int, category_context: dict) -> list[dict]:
+def _build_interventions(config_invalid: bool, result: dict, meta_aporte: float, days_remaining: int, qtd_outros: int, category_context: dict, is_active: bool) -> list[dict]:
+    if not is_active:
+        cards = []
+        if config_invalid:
+            cards.append({"priority": 1, "tone": "warning", "title": "Configuração financeira incompleta", "what": "Receita base ou teto de gastos ainda não estão configurados de forma consistente.", "impact": "Parte do diagnóstico deixa de refletir o plano real do perfil.", "action": "Revise os parâmetros globais antes de usar este fechamento como base comparativa."})
+        if result["saldo_teto"] < 0 or result["saldo_variaveis"] < 0:
+            impact = f"O teto fechou acima do planejado em {_format_currency(abs(result['saldo_teto']))}." if result["saldo_teto"] < 0 else f"As variáveis fecharam negativas em {_format_currency(abs(result['saldo_variaveis']))}."
+            cards.append({"priority": 2, "tone": "critical", "title": "O ciclo fechou em excesso", "what": "O comprometido total passou do limite ou o saldo disponível para variáveis acabou antes do fechamento.", "impact": impact, "action": "Use esse excesso para recalibrar o próximo ciclo antes de liberar gastos discricionários."})
+        if meta_aporte > 0 and result["meta_ameacada"]:
+            cards.append({"priority": 3, "tone": "warning", "title": "Meta de aporte não foi alcançada", "what": "O aporte final do ciclo ficou abaixo da meta definida.", "impact": f"Faltaram {_format_currency(meta_aporte - result['aporte_real'])} para bater a meta de {_format_currency(meta_aporte)}.", "action": "Defina onde esse valor será recuperado no próximo ciclo antes de reabrir margem para extras."})
+        if category_context["categorias_acima_do_limite"]:
+            top = category_context["categorias_acima_do_limite"][0]
+            cards.append({"priority": 4, "tone": "warning", "title": f"{top['categoria']} foi a principal pressão", "what": "A categoria fechou acima da referência definida para o ciclo.", "impact": f"Gasto atual: {_format_currency(top['atual'])} para uma referência de {_format_currency(top['limite'])}.", "action": "Trate essa categoria como o primeiro ajuste da próxima rodada."})
+        if category_context["anomalias_relevantes"]:
+            top = category_context["anomalias_relevantes"][0]
+            cards.append({"priority": 5, "tone": "info", "title": f"{top['categoria']} fechou fora do padrão", "what": "O gasto desta categoria terminou acima do comportamento histórico recente.", "impact": f"Valor atual: {_format_currency(top['atual'])}, cerca de {top['pct']:.0f}% acima da média de {_format_currency(top['media'])}.", "action": "Confirme se esse aumento foi pontual ou se precisa virar regra de planejamento."})
+        if qtd_outros > 0:
+            cards.append({"priority": 6, "tone": "info", "title": "Há lançamentos sem leitura útil", "what": "Parte dos débitos ainda está classificada como Outros.", "impact": f"{qtd_outros} lançamento(s) continuam fora das categorias analíticas do ciclo.", "action": "Reclassifique esses lançamentos antes de usar este fechamento como base histórica."})
+        return sorted(cards, key=lambda item: item["priority"])
     cards = []
     if config_invalid:
         cards.append({"priority": 1, "tone": "warning", "title": "Configuração financeira incompleta", "what": "Receita base ou teto de gastos ainda não estão configurados de forma consistente.", "impact": "Parte do diagnóstico deixa de refletir o plano real do perfil.", "action": "Revise os parâmetros globais na aba Configurações antes de usar este raio-X como referência."})
@@ -221,7 +326,7 @@ def _build_interventions(config_invalid: bool, result: dict, meta_aporte: float,
         cards.append({"priority": 5, "tone": "info", "title": f"{top['categoria']} fugiu do padrão", "what": "O gasto atual desta categoria está acima do comportamento histórico recente.", "impact": f"Valor atual: {_format_currency(top['atual'])}, cerca de {top['pct']:.0f}% acima da média de {_format_currency(top['media'])}.", "action": "Revise os lançamentos desta categoria e confirme se o aumento foi intencional."})
     if qtd_outros > 0:
         cards.append({"priority": 6, "tone": "info", "title": "Há lançamentos sem leitura útil", "what": "Parte dos débitos ainda está classificada como Outros.", "impact": f"{qtd_outros} lançamento(s) continuam fora das categorias analíticas do ciclo.", "action": "Classifique esses lançamentos para melhorar a precisão dos insights e dos limites."})
-    if days_remaining <= 5 and not result["df_config"].empty and "Tipo" in result["df_config"].columns:
+    if is_active and days_remaining <= 5 and not result["df_config"].empty and "Tipo" in result["df_config"].columns:
         df_cartao = result["df_config"][result["df_config"]["Tipo"].astype(str).str.strip().str.lower() == "cartao"]
         if not df_cartao.empty and "Status_Conciliacao" in df_cartao.columns:
             pendentes = df_cartao[df_cartao["Status_Conciliacao"] == "⏳ Pendente"]
@@ -230,21 +335,21 @@ def _build_interventions(config_invalid: bool, result: dict, meta_aporte: float,
     return sorted(cards, key=lambda item: item["priority"])
 
 
-def _render_intervention(card: dict) -> None:
+def _render_intervention(card: dict, action_label: str) -> None:
     card_html = f"""
     <div class="intervention-card {card["tone"]}">
         <div class="intervention-title">{card["title"]}</div>
         <div class="intervention-line"><strong>O que aconteceu:</strong> {card["what"]}</div>
         <div class="intervention-line"><strong>Impacto:</strong> {card["impact"]}</div>
-        <div class="intervention-line"><strong>Ação agora:</strong> {card["action"]}</div>
+        <div class="intervention-line"><strong>{action_label}:</strong> {card["action"]}</div>
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
 
 
-def _prepare_launch_table(df_ops: pd.DataFrame) -> pd.DataFrame:
+def _prepare_launch_table(df_ops: pd.DataFrame, reference_ops: pd.DataFrame | None = None) -> pd.DataFrame:
     disp = df_ops.copy()
-    debit_ops = _get_debit_ops(df_ops)
+    debit_ops = _get_debit_ops(reference_ops if reference_ops is not None else df_ops)
     stats = debit_ops.groupby("Categoria")["Valor"].agg(["mean", "std"]).to_dict(orient="index") if not debit_ops.empty and "Categoria" in debit_ops.columns else {}
     reasons, weights = [], []
     for _, row in disp.iterrows():
@@ -310,16 +415,18 @@ def render_page():
     std_sr = statistics.stdev(sr_history) if len(sr_history) > 1 else 0.0
     score_data = calcular_score_financeiro(savings_rate, current["pct_teto"], not current["meta_ameacada"], std_sr, pct_outros)
     category_context = _build_category_context(current, previous_results, category_budgets)
+    budget_snapshot = _build_budget_snapshot(current, category_context, meta_aporte)
+    category_ranking = _build_category_ranking(category_context)
     status = _classify_cycle_status(receita_base <= 0 or teto_gastos <= 0, current, meta_aporte, pct_outros, ritmo_pct, category_context)
-    summary = _build_cycle_summary(status, current, meta_aporte, ritmo_diario, cycle["days_remaining"], category_context, pct_outros)
-    interventions = _build_interventions(receita_base <= 0 or teto_gastos <= 0, current, meta_aporte, cycle["days_remaining"], qtd_outros, category_context)
+    summary = _build_cycle_summary(status, current, meta_aporte, ritmo_diario, cycle["days_remaining"], category_context, pct_outros, cycle["is_active"])
+    interventions = _build_interventions(receita_base <= 0 or teto_gastos <= 0, current, meta_aporte, cycle["days_remaining"], qtd_outros, category_context, cycle["is_active"])
 
-    state_label = "Ritmo disponível por dia" if cycle["is_active"] else "Resultado final do ciclo"
+    state_label = "Ritmo disponível por dia" if cycle["is_active"] else "Margem final vs teto"
     state_value = _format_currency(ritmo_diario) if ritmo_diario is not None else _format_currency(current["saldo_teto"])
     if cycle["is_active"]:
         state_sub = f"{cycle['days_remaining']} dia(s) até o fechamento"
     else:
-        state_sub = f"Saldo final vs teto: {_format_currency(current['saldo_teto'])}"
+        state_sub = "Positivo indica folga; negativo indica excesso."
 
     hero_html = f"""
     <div class="cycle-state-card">
@@ -350,42 +457,48 @@ def render_page():
     st.markdown(hero_html, unsafe_allow_html=True)
 
     if interventions:
-        st.markdown('<p class="section-header">Intervenções Prioritárias</p>', unsafe_allow_html=True)
+        title = "Intervenções Prioritárias" if cycle["is_active"] else "Leituras Prioritárias do Ciclo"
+        action_label = "Ação agora" if cycle["is_active"] else "Ajuste sugerido"
+        st.markdown(f'<p class="section-header">{title}</p>', unsafe_allow_html=True)
         for card in interventions[:4]:
-            _render_intervention(card)
+            _render_intervention(card, action_label)
         if len(interventions) > 4:
             with st.expander("Outros sinais do ciclo"):
                 for card in interventions[4:]:
-                    _render_intervention(card)
+                    _render_intervention(card, action_label)
 
     st.markdown('<p class="section-header">KPIs do Ciclo</p>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     delta_variaveis = current["total_variaveis"] - previous["total_variaveis"] if previous else None
-    delta_saldo = current["saldo_teto"] - previous["saldo_teto"] if previous else None
+    previous_credit_total = float(_get_credit_ops(previous["df_ops"])["Valor"].sum()) if previous is not None and not _get_credit_ops(previous["df_ops"]).empty else 0.0
+    delta_creditos = category_context["credito_total"] - previous_credit_total if previous else None
     delta_sr = savings_rate - ((previous["aporte_real"] / receita_base) * 100) if previous and receita_base > 0 else None
     meta_delta = current["aporte_real"] - meta_aporte if meta_aporte > 0 else current["aporte_real"]
-    c1.metric("Total Variáveis", _format_currency(current["total_variaveis"]), delta=f"R$ {delta_variaveis:+,.0f} vs anterior" if delta_variaveis is not None else None, delta_color="inverse" if delta_variaveis and delta_variaveis > 0 else "normal")
-    c2.metric("Saldo do Teto", _format_currency(current["saldo_teto"]), delta=f"R$ {delta_saldo:+,.0f} vs anterior" if delta_saldo is not None else None)
-    c3.metric("Aporte Projetado", _format_currency(current["aporte_real"]), delta=f"R$ {meta_delta:+,.0f} vs meta" if meta_aporte > 0 else "Sem meta definida", delta_color="normal" if meta_delta >= 0 else "inverse")
-    c4.metric("Savings Rate", f"{savings_rate:.1f}%", delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None, delta_color="normal" if savings_rate >= 20 else "inverse")
+    c1.metric("Variáveis líquidas", _format_currency(current["total_variaveis"]), delta=f"R$ {delta_variaveis:+,.0f} vs anterior" if delta_variaveis is not None else None, delta_color="inverse" if delta_variaveis and delta_variaveis > 0 else "normal")
+    c2.metric("Distância da meta", _format_currency(abs(meta_delta)) if meta_aporte > 0 else _format_currency(current["aporte_real"]), delta="Acima da meta" if meta_aporte > 0 and meta_delta >= 0 else "Abaixo da meta" if meta_aporte > 0 else "Sem meta definida", delta_color="normal" if meta_delta >= 0 else "inverse")
+    c3.metric("Créditos/estornos", _format_currency(category_context["credito_total"]), delta=f"R$ {delta_creditos:+,.0f} vs anterior" if delta_creditos is not None else None, delta_color="normal")
+    c4.metric("Savings Rate", f"{savings_rate:.1f}%", delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None, delta_color="off" if status["label"] != "Controlado" else "normal")
 
     st.markdown('<p class="section-header">Resumo do Orçamento</p>', unsafe_allow_html=True)
-    aporte_color = "#00e676" if not current["meta_ameacada"] else "#ff1744"
     summary_html = '<table class="summary-table"><tbody>'
-    summary_html += f'<tr><td><strong>Total Fixos</strong></td><td style="text-align:right"><strong>{_format_currency(current["total_fixos"])}</strong></td></tr>'
-    summary_html += f'<tr><td>Variáveis do ciclo</td><td style="text-align:right">{_format_currency(current["total_variaveis"])}</td></tr>'
-    if category_context["credito_total"] > 0:
-        summary_html += f'<tr><td style="color:#22c55e;">Créditos/estornos</td><td style="text-align:right; color:#22c55e;">− {_format_currency(category_context["credito_total"])}</td></tr>'
-    summary_html += f'<tr><td><strong>Total Comprometido</strong></td><td style="text-align:right"><strong>{_format_currency(current["total_comprometido"])}</strong></td></tr>'
-    summary_html += f'<tr><td>Saldo restante do teto</td><td style="text-align:right">{_format_currency(current["saldo_teto"])}</td></tr>'
-    summary_html += f'<tr><td>Meta de aporte</td><td style="text-align:right">{_format_currency(meta_aporte)}</td></tr>'
-    summary_html += f'<tr><td>Aporte projetado</td><td style="text-align:right; color:{aporte_color}; font-weight:900;">{_format_currency(current["aporte_real"])}</td></tr>'
+    for row in budget_snapshot["rows"]:
+        color = "#22c55e" if row["tone"] == "positive" else "#ff5c5c" if row["tone"] == "negative" else "inherit"
+        value_markup = _format_currency(row["value"])
+        if row["strong"]:
+            summary_html += f'<tr><td><strong>{row["label"]}</strong></td><td style="text-align:right; color:{color};"><strong>{value_markup}</strong></td></tr>'
+        else:
+            summary_html += f'<tr><td>{row["label"]}</td><td style="text-align:right; color:{color};">{value_markup}</td></tr>'
     summary_html += '</tbody></table>'
     st.markdown(summary_html, unsafe_allow_html=True)
 
     tipo_icons = {"Nao_Cartao": "🏠 Essenciais", "Cartao": "💳 Cartão", "Extra": "⭐ Extras"}
     if not current["df_config"].empty and "Tipo" in current["df_config"].columns:
         tipos_col = current["df_config"]["Tipo"].astype(str).str.strip()
+        df_cartao = current["df_config"][tipos_col == "Cartao"].copy()
+        if not df_cartao.empty and "Status_Conciliacao" in df_cartao.columns:
+            confirmados = df_cartao[df_cartao["Status_Conciliacao"] == "✅ Confirmado"]
+            pendentes = len(df_cartao) - len(confirmados)
+            st.caption(f"Conciliação dos fixos de cartão: {len(confirmados)}/{len(df_cartao)} confirmados, {pendentes} pendentes.")
         for tipo in tipos_col.unique():
             df_tipo = current["df_config"][tipos_col == tipo].copy()
             with st.expander(f'{tipo_icons.get(tipo, tipo)} — **{_format_currency(float(df_tipo["Valor"].sum()))}**'):
@@ -394,24 +507,27 @@ def render_page():
 
     if not category_context["top_categorias_relevantes"].empty:
         st.markdown('<p class="section-header">Categorias que Mais Pressionam o Ciclo</p>', unsafe_allow_html=True)
+        if not category_ranking.empty:
+            st.dataframe(category_ranking, use_container_width=True, hide_index=True)
         chart_data = category_context["top_categorias_relevantes"].reset_index()
         chart_data.columns = ["Categoria", "Valor"]
-        tab_donut, tab_tree = st.tabs(["Visão macro", "Detalhamento"])
-        with tab_donut:
-            fig_donut = px.pie(chart_data, names="Categoria", values="Valor", hole=0.58, color_discrete_sequence=px.colors.qualitative.Safe)
-            fig_donut.update_traces(textinfo="percent+label", texttemplate="<b>%{label}</b><br>%{percent:.1%}", hovertemplate="<b>%{label}</b><br>Gasto: R$ %{value:,.2f}<br>%{percent:.1%} do total<extra></extra>", textposition="outside")
-            fig_donut.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, margin=dict(t=20, b=20, l=10, r=10), height=430, showlegend=False)
-            st.plotly_chart(fig_donut, use_container_width=True)
-        with tab_tree:
-            detail_ops = _get_debit_ops(current["df_ops"]).copy()
-            if not detail_ops.empty and {"Categoria", "Descricao", "Valor"}.issubset(detail_ops.columns):
-                detail_ops["Descricao"] = detail_ops["Descricao"].fillna("Desconhecido")
-                fig_tree = px.treemap(detail_ops, path=[px.Constant("Débitos"), "Categoria", "Descricao"], values="Valor", color="Categoria", color_discrete_sequence=px.colors.qualitative.Safe)
-                fig_tree.update_traces(textinfo="label+value+percent parent", texttemplate="%{label}<br>R$ %{value:,.2f}<br>%{percentParent:.1%}", hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percentParent:.1%} da categoria<extra></extra>")
-                fig_tree.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, margin=dict(t=20, b=20, l=10, r=10), height=500)
-                st.plotly_chart(fig_tree, use_container_width=True)
-            else:
-                st.info("Sem detalhe suficiente para montar a visão expandida deste ciclo.")
+        with st.expander("Abrir visualização gráfica das categorias", expanded=False):
+            tab_donut, tab_tree = st.tabs(["Visão macro", "Detalhamento"])
+            with tab_donut:
+                fig_donut = px.pie(chart_data, names="Categoria", values="Valor", hole=0.58, color_discrete_sequence=px.colors.qualitative.Safe)
+                fig_donut.update_traces(textinfo="percent+label", texttemplate="<b>%{label}</b><br>%{percent:.1%}", hovertemplate="<b>%{label}</b><br>Gasto: R$ %{value:,.2f}<br>%{percent:.1%} do total<extra></extra>", textposition="outside")
+                fig_donut.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, margin=dict(t=20, b=20, l=10, r=10), height=430, showlegend=False)
+                st.plotly_chart(fig_donut, use_container_width=True)
+            with tab_tree:
+                detail_ops = _get_debit_ops(current["df_ops"]).copy()
+                if not detail_ops.empty and {"Categoria", "Descricao", "Valor"}.issubset(detail_ops.columns):
+                    detail_ops["Descricao"] = detail_ops["Descricao"].fillna("Desconhecido")
+                    fig_tree = px.treemap(detail_ops, path=[px.Constant("Débitos"), "Categoria", "Descricao"], values="Valor", color="Categoria", color_discrete_sequence=px.colors.qualitative.Safe)
+                    fig_tree.update_traces(textinfo="label+value+percent parent", texttemplate="%{label}<br>R$ %{value:,.2f}<br>%{percentParent:.1%}", hovertemplate="<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percentParent:.1%} da categoria<extra></extra>")
+                    fig_tree.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, margin=dict(t=20, b=20, l=10, r=10), height=500)
+                    st.plotly_chart(fig_tree, use_container_width=True)
+                else:
+                    st.info("Sem detalhe suficiente para montar a visão expandida deste ciclo.")
 
     if category_context["controles_categoria"]:
         st.markdown('<p class="section-header">Limites e Referências por Categoria</p>', unsafe_allow_html=True)
@@ -422,8 +538,12 @@ def render_page():
             st.markdown(f'<div class="cat-gauge-label"><span>{icon} <strong>{item["categoria"]}</strong> <small style="opacity:.55">({item["fonte"]})</small></span><span>{_format_currency(item["atual"])} / {_format_currency(item["referencia"])} ({item["pct"]:.1f}%)</span></div><div class="progress-outer" style="height:20px; margin-bottom:1rem;"><div class="progress-inner" style="width:{pct_visual:.1f}%; background:{color}; font-size:.75rem; padding-right:8px;">{item["pct"]:.0f}%</div></div>', unsafe_allow_html=True)
 
     st.markdown('<p class="section-header">Score Financeiro</p>', unsafe_allow_html=True)
-    score_cls = "badge-green" if score_data["score"] >= 70 else "badge-yellow" if score_data["score"] >= 50 else "badge-red"
-    st.markdown(f'<div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem;"><span class="badge {score_cls}" style="font-size:1.05rem; padding:6px 18px;">{score_data["emoji"]} Score: {score_data["score"]}/100 — {score_data["label"]}</span><span style="opacity:.75; font-size:.92rem;">Indicador composto; use como apoio, não como diagnóstico principal.</span></div>', unsafe_allow_html=True)
+    score_note = "Indicador composto; use como apoio, não como diagnóstico principal."
+    if status["label"] == "Crítico":
+        score_note = "Mesmo com eficiência relativa em alguns pilares, o diagnóstico do ciclo continua crítico e tem prioridade."
+    elif status["label"] == "Em atenção":
+        score_note = "O score ajuda a contextualizar a disciplina do ciclo, mas não substitui os sinais de atenção listados acima."
+    st.markdown(f'<div class="score-panel"><div class="score-topline"><span class="score-chip">{score_data["emoji"]} Score {score_data["score"]}/100</span><span class="score-copy">{score_data["label"]}</span></div><div class="score-note">{score_note}</div></div>', unsafe_allow_html=True)
     with st.expander("Detalhes metodológicos do score", expanded=False):
         for pillar, points in score_data["pilares"].items():
             maximum = {"Savings Rate": 30, "Aderência ao Teto": 25, "Meta de Aporte": 20, "Consistência": 15, "Organização": 10}.get(pillar, 10)
@@ -432,16 +552,16 @@ def render_page():
             st.markdown(f'<div class="cat-gauge-label"><span>{pillar}</span><span>{points}/{maximum}</span></div><div class="progress-outer" style="height:16px; margin-bottom:.75rem;"><div class="progress-inner" style="width:{pct:.0f}%; background:{color}; font-size:.7rem;"></div></div>', unsafe_allow_html=True)
 
     if len(category_context["radar"]) >= 3:
-        st.markdown('<p class="section-header">Padrão Histórico por Categoria</p>', unsafe_allow_html=True)
-        categories = [item[0] for item in category_context["radar"]]
-        current_values = [item[1] for item in category_context["radar"]]
-        history_values = [item[2] for item in category_context["radar"]]
-        max_value = max(max(current_values, default=0), max(history_values, default=0), 1)
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(r=history_values + [history_values[0]], theta=categories + [categories[0]], fill="toself", name="Média histórica", line_color="#00c9ff", fillcolor="rgba(0, 201, 255, 0.18)"))
-        fig_radar.add_trace(go.Scatterpolar(r=current_values + [current_values[0]], theta=categories + [categories[0]], fill="toself", name=f"Atual ({mes_sel})", line_color="#ff4b2b", fillcolor="rgba(255, 75, 43, 0.28)"))
-        fig_radar.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, polar=dict(radialaxis=dict(visible=True, range=[0, max_value * 1.15], showticklabels=False)), showlegend=True, height=420, margin=dict(t=30, b=30, l=30, r=30))
-        st.plotly_chart(fig_radar, use_container_width=True)
+        with st.expander("Abrir comparação histórica por categoria", expanded=False):
+            categories = [item[0] for item in category_context["radar"]]
+            current_values = [item[1] for item in category_context["radar"]]
+            history_values = [item[2] for item in category_context["radar"]]
+            max_value = max(max(current_values, default=0), max(history_values, default=0), 1)
+            fig_radar = go.Figure()
+            fig_radar.add_trace(go.Scatterpolar(r=history_values + [history_values[0]], theta=categories + [categories[0]], fill="toself", name="Média histórica", line_color="#00c9ff", fillcolor="rgba(0, 201, 255, 0.18)"))
+            fig_radar.add_trace(go.Scatterpolar(r=current_values + [current_values[0]], theta=categories + [categories[0]], fill="toself", name=f"Atual ({mes_sel})", line_color="#ff4b2b", fillcolor="rgba(255, 75, 43, 0.28)"))
+            fig_radar.update_layout(template=plotly_template, paper_bgcolor=plotly_bg, plot_bgcolor=plotly_bg, polar=dict(radialaxis=dict(visible=True, range=[0, max_value * 1.15], showticklabels=False)), showlegend=True, height=420, margin=dict(t=30, b=30, l=30, r=30))
+            st.plotly_chart(fig_radar, use_container_width=True)
 
     st.markdown(f'<p class="section-header">Lançamentos — {mes_sel}</p>', unsafe_allow_html=True)
     if current["df_ops"].empty:
@@ -453,7 +573,7 @@ def render_page():
     with col_filtro:
         opcoes = sorted(current["df_ops"]["Categoria"].dropna().unique().tolist()) if "Categoria" in current["df_ops"].columns else []
         filtro_cat = st.multiselect("Filtrar por categoria", options=opcoes, key="filtro_cat_lanc")
-    disp = current["df_ops"].copy()
+    disp = _prepare_launch_table(current["df_ops"], reference_ops=current["df_ops"])
     if busca and busca.strip():
         disp = disp[disp["Descricao"].str.contains(busca.strip(), case=False, na=False)]
     if filtro_cat and "Categoria" in disp.columns:
@@ -461,9 +581,10 @@ def render_page():
     if disp.empty:
         st.info("Nenhum lançamento atende aos filtros atuais.")
         return
-    disp = _prepare_launch_table(disp).sort_values("_peso", ascending=False)
+    disp = disp.sort_values("_peso", ascending=False)
     credit_idx = set(disp.index[disp["Tipo"] == "credito"].tolist()) if "Tipo" in disp.columns else set()
-    display_cols = [c for c in ["Descricao", "Categoria", "Motivo do destaque", "Valor", "Cartao", "Tipo"] if c in disp.columns]
+    reason_col = ["Motivo do destaque"] if "Motivo do destaque" in disp.columns and (disp["Motivo do destaque"] != "—").any() else []
+    display_cols = [c for c in ["Descricao", "Categoria", *reason_col, "Valor", "Cartao", "Tipo"] if c in disp.columns]
     disp = disp[display_cols]
     disp["Valor"] = disp["Valor"].map(lambda value: _format_currency(float(value)) if isinstance(value, (int, float)) else value)
     if "Tipo" in disp.columns:
