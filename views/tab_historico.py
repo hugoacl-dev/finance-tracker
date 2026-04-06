@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from services.data_engine import processar_mes
-from services.forecasting import prever_gastos_categoria, calcular_tendencia
+from services.forecasting import (
+    analisar_sazonalidade,
+    calcular_tendencia,
+    prever_gastos_categoria,
+)
 from core.utils import mes_sort_key
 
 def render_page():
@@ -245,7 +249,8 @@ def render_page():
             for row in hist_rows:
                 try:
                     mes_str = str(row.get("Mês", "")).strip().lower()
-                    if not mes_str: continue
+                    if not mes_str:
+                        continue
 
                     if "/" in mes_str:
                         # Formato numérico ex: "03/25" ou "03/2025"
@@ -254,10 +259,12 @@ def render_page():
                     else:
                         # Formato texto ex: "março 25" ou "mar 2025"
                         partes = mes_str.split()
-                        if len(partes) != 2: continue
+                        if len(partes) != 2:
+                            continue
                         nome_mes, aa = partes
                         nome_mes_curto = nome_mes[:3]
-                        if nome_mes_curto not in meses_pt: continue
+                        if nome_mes_curto not in meses_pt:
+                            continue
                         mes_ciclo = meses_pt[nome_mes_curto]
 
                     ano_ciclo = int(aa) if len(str(aa)) == 4 else 2000 + int(aa)
@@ -393,10 +400,10 @@ def render_page():
         row_style = ""
         medal = ""
         if idx == best_sr_idx and len(df_hist) > 2:
-            row_style = f'style="background:rgba(0,230,118,.06); border-left:3px solid #00e676;"'
+            row_style = 'style="background:rgba(0,230,118,.06); border-left:3px solid #00e676;"'
             medal = " 🏆"
         elif idx == worst_sr_idx and len(df_hist) > 2:
-            row_style = f'style="background:rgba(255,75,43,.04); border-left:3px solid #ff4b2b;"'
+            row_style = 'style="background:rgba(255,75,43,.04); border-left:3px solid #ff4b2b;"'
 
         table_html += (
             f'<tr {row_style}>'

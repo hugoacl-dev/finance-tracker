@@ -591,6 +591,128 @@ def render_styles():
         0% {{ background-position: 200% 0; }}
         100% {{ background-position: -200% 0; }}
     }}
+
+    /* ════════════════
+       CYCLE STATE
+    ════════════════ */
+    .cycle-state-card {{
+        background: linear-gradient(135deg, {t["card_bg"]}, {t["card_bg2"]});
+        border: 1px solid {t["border_strong"]};
+        border-radius: 20px;
+        padding: 1.4rem 1.4rem 1.1rem 1.4rem;
+        box-shadow: {t["shadow_sm"]};
+        margin-bottom: 1.2rem;
+    }}
+    .state-topline {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .8rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }}
+    .status-pill {{
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: .38rem .8rem;
+        font-weight: 800;
+        font-size: .78rem;
+        letter-spacing: .4px;
+        text-transform: uppercase;
+    }}
+    .status-positive {{
+        background: {t["badge_green_bg"]};
+        color: {t["badge_green_fg"]};
+    }}
+    .status-warning {{
+        background: {t["badge_yellow_bg"]};
+        color: {t["badge_yellow_fg"]};
+    }}
+    .status-critical {{
+        background: {t["badge_red_bg"]};
+        color: {t["badge_red_fg"]};
+    }}
+    .state-cycle {{
+        color: {t["text_muted"]};
+        font-size: .8rem;
+        font-weight: 700;
+        letter-spacing: .6px;
+        text-transform: uppercase;
+    }}
+    .state-grid {{
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .9rem;
+    }}
+    .state-item {{
+        background: rgba(255,255,255,0.03);
+        border: 1px solid {t["border"]};
+        border-radius: 16px;
+        padding: 1rem;
+    }}
+    .state-label {{
+        color: {t["text_muted"]};
+        font-size: .76rem;
+        letter-spacing: .4px;
+        text-transform: uppercase;
+        font-weight: 700;
+        margin-bottom: .35rem;
+    }}
+    .state-value {{
+        color: {t["text"]};
+        font-size: 1.6rem;
+        line-height: 1.15;
+        font-weight: 900;
+    }}
+    .state-sub {{
+        color: {t["text_muted"]};
+        font-size: .82rem;
+        margin-top: .25rem;
+    }}
+    .state-summary {{
+        margin-top: 1rem;
+        color: {t["text"]};
+        font-size: .96rem;
+        line-height: 1.55;
+        font-weight: 600;
+    }}
+
+    /* ════════════════
+       INTERVENTIONS
+    ════════════════ */
+    .intervention-card {{
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        margin-bottom: .75rem;
+        border: 1px solid {t["border"]};
+        background: {t["card_bg"]};
+        box-shadow: {t["shadow_sm"]};
+    }}
+    .intervention-card.warning {{
+        border-left: 4px solid {t["badge_yellow_fg"]};
+    }}
+    .intervention-card.critical {{
+        border-left: 4px solid {t["badge_red_fg"]};
+    }}
+    .intervention-card.info {{
+        border-left: 4px solid {t["accent"]};
+    }}
+    .intervention-title {{
+        color: {t["text"]};
+        font-size: .98rem;
+        font-weight: 800;
+        margin-bottom: .45rem;
+    }}
+    .intervention-line {{
+        color: {t["text_muted"]};
+        font-size: .9rem;
+        line-height: 1.5;
+        margin-bottom: .18rem;
+    }}
+    .intervention-line strong {{
+        color: {t["text"]};
+    }}
     </style>
     """, unsafe_allow_html=True)
 

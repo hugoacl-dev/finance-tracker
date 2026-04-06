@@ -1,4 +1,5 @@
 import inspect
+import math
 import pandas as pd
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
@@ -8,13 +9,46 @@ import re
 
 
 def normalize_text(t: Optional[str]) -> str:
-    if not t: return ""
+    if not t:
+        return ""
     t = unicodedata.normalize('NFKD', str(t)).encode('ASCII', 'ignore').decode('ASCII')
     return "".join([char for char in t if char.isalnum()]).upper()
 
 def is_similar(t1: str, t2: str, threshold: float = 0.8) -> bool:
-    if t1 == t2: return True
+    if t1 == t2:
+        return True
     return difflib.SequenceMatcher(None, normalize_text(t1), normalize_text(t2)).ratio() >= threshold
+
+
+def normalize_card_filter_list(value: Any) -> list[str]:
+    """
+    Normaliza filtros de cartão aceitando:
+    - list/tuple/set de strings
+    - CSV string ("1234, 5678")
+    - strings vazias / None
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",")]
+        return [item for item in parts if item]
+
+    if isinstance(value, (list, tuple, set)):
+        normalized = []
+        for item in value:
+            if item is None:
+                continue
+            item_str = str(item).strip()
+            if item_str:
+                normalized.append(item_str)
+        return normalized
+
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return []
+
+    value_str = str(value).strip()
+    return [value_str] if value_str else []
 
 def dias_ate_fechamento(dia_fechamento: int) -> int:
     fuso_br = timezone(timedelta(hours=-3))
@@ -122,6 +156,8 @@ def processar_mes(
     total_fixos = df_config["Valor"].sum() if not df_config.empty else 0.0
     limite_base_var = teto_gastos - total_fixos
 
+    cartoes_aceitos = normalize_card_filter_list(cartoes_aceitos)
+    cartoes_excluidos = normalize_card_filter_list(cartoes_excluidos)
     df_ops = filtro_titularidade(df_ops, perfil_ativo, cartoes_aceitos, cartoes_excluidos)
     df_ops = filtro_dedup_fixos(df_ops, df_config)
 
