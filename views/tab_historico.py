@@ -114,14 +114,27 @@ def render_page():
         name="Savings Rate (%)",
     ), secondary_y=False)
 
-    # Benchmark 30%
+    benchmark_savings_rate = 30
+    meta_savings_rate = (META_APORTE / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
+
+    # Benchmark geral de mercado
     fig_dual.add_hline(
-        y=30, secondary_y=False,
+        y=benchmark_savings_rate, secondary_y=False,
         line_dash="dot", line_color="#00e676", line_width=1.5,
-        annotation_text="Meta 30%",
+        annotation_text="Benchmark 30%",
         annotation_position="top left",
         annotation_font=dict(color="#00e676", size=11),
     )
+
+    # Meta real do usuario a partir de Meta_Aporte / Receita_Base
+    if meta_savings_rate > 0:
+        fig_dual.add_hline(
+            y=meta_savings_rate, secondary_y=False,
+            line_dash="dash", line_color="#f59e0b", line_width=2,
+            annotation_text=f"Meta do plano {meta_savings_rate:.1f}%",
+            annotation_position="top right",
+            annotation_font=dict(color="#f59e0b", size=11),
+        )
 
     fig_dual.update_layout(
         template=_plotly_tpl,
@@ -134,7 +147,8 @@ def render_page():
     )
     fig_dual.update_yaxes(
         title_text="Savings Rate %", secondary_y=False,
-        ticksuffix="%", gridcolor=_plotly_grid, range=[0, max(df_hist["_savings_rate"].max() * 1.3, 40)],
+        ticksuffix="%", gridcolor=_plotly_grid,
+        range=[0, max(df_hist["_savings_rate"].max() * 1.3, benchmark_savings_rate + 10, meta_savings_rate + 10)],
     )
     fig_dual.update_yaxes(
         title_text="Aporte R$", secondary_y=True,
