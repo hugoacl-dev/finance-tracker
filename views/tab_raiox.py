@@ -287,11 +287,11 @@ def render_page():
                   delta=f"{delta_saldo:+,.0f} R$ vs anterior" if delta_saldo is not None else None,
                   delta_color="normal")
         if r["aporte_real"] < 0:
-            _aporte_delta = "🚨 COMPROMETIDO"
-            _aporte_color = "inverse"
+            _aporte_delta = "-🚨 COMPROMETIDO"
+            _aporte_color = "normal"
         elif r["meta_ameacada"]:
-            _aporte_delta = "⚠ AMEAÇADO"
-            _aporte_color = "inverse"
+            _aporte_delta = "-⚠ AMEAÇADO"
+            _aporte_color = "normal"
         else:
             _aporte_delta = "✅ OK"
             _aporte_color = "normal"
