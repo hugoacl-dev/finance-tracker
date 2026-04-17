@@ -5,10 +5,10 @@ Ativado na primeira visita (sem meses cadastrados e sem flag onboarding_done).
 import streamlit as st
 
 
-def render_onboarding() -> bool:
+def render_onboarding() -> None:
     """
     Renderiza o wizard de onboarding em 4 passos.
-    Retorna True quando o onboarding está completo.
+    Renderiza o onboarding e controla a navegação via session_state.
     """
     if "onboarding_step" not in st.session_state:
         st.session_state["onboarding_step"] = 1
@@ -168,7 +168,7 @@ def render_onboarding() -> bool:
         # Mostrar fixos adicionados
         if st.session_state["onboarding_fixos"]:
             total = sum(f["Valor"] for f in st.session_state["onboarding_fixos"])
-            st.markdown(f"**{len(st.session_state['onboarding_fixos'])} gastos fixos** · Total: **R$ {total:,.2f}**")
+            st.markdown(f"**{len(st.session_state['onboarding_fixos'])} gastos fixos** · Total: **R\\$ {total:,.2f}**")
             for i, f in enumerate(st.session_state["onboarding_fixos"]):
                 row_cols = st.columns([4, 3, 2, 1])
                 row_cols[0].text(f["Descricao_Fatura"])
@@ -227,4 +227,4 @@ def render_onboarding() -> bool:
                 st.session_state["transacoes_data"] = transacoes
                 st.rerun()
 
-    return False
+    return

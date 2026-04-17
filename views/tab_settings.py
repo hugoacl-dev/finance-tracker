@@ -183,7 +183,6 @@ def render_page():
                         st.error("Chave de API do Gemini não configurada.")
                     else:
                         with st.spinner("Analisando faturas com Gemini Vision (isso leva ~10 a 15 segundos)..."):
-                            import PIL.Image
                             try:
                                 img = PIL.Image.open(imagem_lote)
                                 prompt_img = """Você é um extrator de dados financeiros impiedosamente preciso.
@@ -313,7 +312,7 @@ def render_page():
                     for t in ignorados:
                         cart_str = f" | 💳 {t.get('Cartao', '')}"
                         tit_str = f" | 👤 {t.get('Titular', '')}" if t.get('Titular') else ""
-                        st.markdown(f"- **{t['Descricao']}** (R$ {t['Valor']}){cart_str}{tit_str}")
+                        st.markdown(f"- **{t['Descricao']}** (R\\$ {t['Valor']}){cart_str}{tit_str}")
                         
             if not pendentes:
                 st.warning("Todas as transações coladas já existiam no banco de dados. Nenhuma transação nova a ser adicionada.")
@@ -705,16 +704,31 @@ def render_page():
             st.success(st.session_state.pop("excluir_mes_success"))
     
         mes_del = st.selectbox("Selecione o mês para excluir", meses_excluir, key="mes_excluir")
-    
-        if st.button(f"🗑️ Excluir mês — {mes_del}", use_container_width=True, type="primary"):
-            if mes_del in transacoes_data:
-                del transacoes_data[mes_del]
-                data_service.delete_transacoes_mes(perfil_ativo, mes_del)
-            if mes_del in mensal_data:
-                del mensal_data[mes_del]
-                data_service.delete_gastos_fixos_mes(perfil_ativo, mes_del)
-            st.session_state["excluir_mes_success"] = f'Mês "{mes_del}" excluído com sucesso!'
-            st.rerun()
+        st.caption("Zona de perigo: esta ação remove fixos e lançamentos do ciclo selecionado.")
+
+        with st.container(border=True):
+            st.warning(f'Para confirmar, digite exatamente: `{mes_del}`')
+            confirm_del = st.text_input(
+                "Confirmação da exclusão",
+                key=f"confirm_del_mes_{mes_del}",
+                placeholder=mes_del,
+            )
+            can_delete = confirm_del.strip() == mes_del
+            if st.button(
+                f"🗑️ Excluir mês — {mes_del}",
+                use_container_width=True,
+                type="primary",
+                disabled=not can_delete,
+            ):
+                try:
+                    data_service.delete_mes(perfil_ativo, mes_del)
+                except Exception as e:
+                    st.error(f"Erro ao excluir mês: {e}")
+                else:
+                    transacoes_data.pop(mes_del, None)
+                    mensal_data.pop(mes_del, None)
+                    st.session_state["excluir_mes_success"] = f'Mês "{mes_del}" excluído com sucesso!'
+                    st.rerun()
     else:
         st.info("Nenhum mês para excluir.")
     
@@ -866,7 +880,6 @@ def render_page():
                     st.error(f"Erro: {e}")
             else:
                 st.warning("Preencha título e valor.")
-
 
 
 

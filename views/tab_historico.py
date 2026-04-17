@@ -2,11 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from services.data_engine import processar_mes
-from services.forecasting import (
-    analisar_sazonalidade,
-    calcular_tendencia,
-    prever_gastos_categoria,
-)
+from services.forecasting import prever_gastos_categoria, calcular_tendencia, analisar_sazonalidade
 from core.utils import mes_sort_key
 
 def render_page():
@@ -25,6 +21,14 @@ def render_page():
     _plotly_bg  = "rgba(0,0,0,0)"
     _plotly_plot_bg = "rgba(248,250,252,0.5)" if _is_light else "rgba(22,22,42,0.7)"
     _plotly_grid = "rgba(0,0,0,0.08)" if _is_light else "rgba(255,255,255,0.08)"
+    _brand = "#0F766E" if _is_light else "#2DD4BF"
+    _info = "#2563EB" if _is_light else "#60A5FA"
+    _success = "#15803D" if _is_light else "#4ADE80"
+    _warning = "#B45309" if _is_light else "#F59E0B"
+    _danger = "#B42318" if _is_light else "#F87171"
+    _bar_success = "linear-gradient(90deg, #0F766E, #34D399)"
+    _bar_warning = "linear-gradient(90deg, #B45309, #F59E0B)"
+    _bar_danger = "linear-gradient(90deg, #B42318, #F87171)"
 
     all_meses = sorted(list(transacoes_data.keys()), key=mes_sort_key)
 
@@ -92,7 +96,7 @@ def render_page():
 
     # Barras: Aporte Real (eixo direito)
     bar_colors = [
-        "#00e676" if v >= META_APORTE else "rgba(255,75,43,.6)"
+        "rgba(21,128,61,.40)" if v >= META_APORTE else "rgba(180,35,24,.34)"
         for v in df_hist["Aporte Real"]
     ]
     fig_dual.add_trace(go.Bar(
@@ -110,35 +114,22 @@ def render_page():
         x=df_hist["Mês"],
         y=df_hist["_savings_rate"],
         mode="lines+markers+text",
-        line=dict(color="#00c9ff", width=3),
-        marker=dict(size=9, color="#00c9ff", line=dict(width=2, color="#fff")),
+        line=dict(color=_brand, width=3),
+        marker=dict(size=9, color=_brand, line=dict(width=2, color="#fff")),
         text=df_hist["_savings_rate"].map(lambda v: f"{v:.1f}%"),
         textposition="top center",
-        textfont=dict(size=11, color="#00c9ff"),
+        textfont=dict(size=11, color=_brand),
         name="Savings Rate (%)",
     ), secondary_y=False)
 
-    benchmark_savings_rate = 30
-    meta_savings_rate = (META_APORTE / RECEITA_BASE * 100) if RECEITA_BASE > 0 else 0
-
-    # Benchmark geral de mercado
+    # Benchmark 30%
     fig_dual.add_hline(
-        y=benchmark_savings_rate, secondary_y=False,
-        line_dash="dot", line_color="#00e676", line_width=1.5,
-        annotation_text="Benchmark 30%",
+        y=30, secondary_y=False,
+        line_dash="dot", line_color=_success, line_width=1.5,
+        annotation_text="Meta 30%",
         annotation_position="top left",
-        annotation_font=dict(color="#00e676", size=11),
+        annotation_font=dict(color=_success, size=11),
     )
-
-    # Meta real do usuario a partir de Meta_Aporte / Receita_Base
-    if meta_savings_rate > 0:
-        fig_dual.add_hline(
-            y=meta_savings_rate, secondary_y=False,
-            line_dash="dash", line_color="#f59e0b", line_width=2,
-            annotation_text=f"Meta do plano {meta_savings_rate:.1f}%",
-            annotation_position="top right",
-            annotation_font=dict(color="#f59e0b", size=11),
-        )
 
     fig_dual.update_layout(
         template=_plotly_tpl,
@@ -151,8 +142,7 @@ def render_page():
     )
     fig_dual.update_yaxes(
         title_text="Savings Rate %", secondary_y=False,
-        ticksuffix="%", gridcolor=_plotly_grid,
-        range=[0, max(df_hist["_savings_rate"].max() * 1.3, benchmark_savings_rate + 10, meta_savings_rate + 10)],
+        ticksuffix="%", gridcolor=_plotly_grid, range=[0, max(df_hist["_savings_rate"].max() * 1.3, 40)],
     )
     fig_dual.update_yaxes(
         title_text="Aporte R$", secondary_y=True,
@@ -174,7 +164,7 @@ def render_page():
         x=df_hist["Mês"],
         y=df_hist["Total Fixos"],
         name="Fixos",
-        marker_color="#6366f1",
+        marker_color=_info,
         text=df_hist["Total Fixos"].map(lambda v: f"R$ {v:,.0f}"),
         textposition="inside",
         textfont=dict(size=10, color="#fff"),
@@ -183,7 +173,7 @@ def render_page():
         x=df_hist["Mês"],
         y=df_hist["Total Variáveis"],
         name="Variáveis",
-        marker_color="#f59e0b",
+        marker_color=_warning,
         text=df_hist["Total Variáveis"].map(lambda v: f"R$ {v:,.0f}"),
         textposition="inside",
         textfont=dict(size=10, color="#fff"),
@@ -192,10 +182,10 @@ def render_page():
     # Linha do Teto
     fig_stack.add_hline(
         y=TETO_GASTOS,
-        line_dash="dash", line_color="#ff416c", line_width=2.5,
+        line_dash="dash", line_color=_danger, line_width=2.5,
         annotation_text=f"Teto R$ {TETO_GASTOS:,.0f}",
         annotation_position="top left",
-        annotation_font=dict(color="#ff416c", size=12),
+        annotation_font=dict(color=_danger, size=12),
     )
 
     # Linha do Total (para ver se cruzou o teto)
@@ -203,8 +193,8 @@ def render_page():
         x=df_hist["Mês"],
         y=df_hist["Comprometido"],
         mode="lines+markers",
-        line=dict(color="rgba(255,255,255,.5)", width=1.5, dash="dot"),
-        marker=dict(size=5, color="rgba(255,255,255,.7)"),
+        line=dict(color="rgba(0,0,0,.45)" if _is_light else "rgba(255,255,255,.5)", width=1.5, dash="dot"),
+        marker=dict(size=5, color="rgba(0,0,0,.55)" if _is_light else "rgba(255,255,255,.7)"),
         name="Total",
         showlegend=True,
     ))
@@ -249,8 +239,7 @@ def render_page():
             for row in hist_rows:
                 try:
                     mes_str = str(row.get("Mês", "")).strip().lower()
-                    if not mes_str:
-                        continue
+                    if not mes_str: continue
 
                     if "/" in mes_str:
                         # Formato numérico ex: "03/25" ou "03/2025"
@@ -259,12 +248,10 @@ def render_page():
                     else:
                         # Formato texto ex: "março 25" ou "mar 2025"
                         partes = mes_str.split()
-                        if len(partes) != 2:
-                            continue
+                        if len(partes) != 2: continue
                         nome_mes, aa = partes
                         nome_mes_curto = nome_mes[:3]
-                        if nome_mes_curto not in meses_pt:
-                            continue
+                        if nome_mes_curto not in meses_pt: continue
                         mes_ciclo = meses_pt[nome_mes_curto]
 
                     ano_ciclo = int(aa) if len(str(aa)) == 4 else 2000 + int(aa)
@@ -304,7 +291,7 @@ def render_page():
                     projecao_txt = "Sem dados suficientes para projetar"
                     on_track = False
 
-                bar_color = "linear-gradient(90deg, #00c9ff, #92fe9d)" if on_track else "linear-gradient(90deg, #f7971e, #ffd200)"
+                bar_color = _bar_success if on_track else _bar_warning
                 status_emoji = "🟢" if on_track else "🟡"
 
                 st.markdown(f"""
@@ -339,7 +326,7 @@ def render_page():
             return '<span class="badge badge-red">🔴 Abaixo</span>'
 
     def _delta_html(delta):
-        color = "#00e676" if delta >= 0 else "#ff4b2b"
+        color = _success if delta >= 0 else _danger
         sign  = "+" if delta >= 0 else ""
         return f'<span style="color:{color}; font-weight:700">{sign}R$ {delta:,.2f}</span>'
 
@@ -347,13 +334,13 @@ def render_page():
         """Inline Savings Rate micro-bar."""
         w = min(sr, 50)  # cap visual at 50%
         if sr >= 30:
-            c = "linear-gradient(90deg, #00c9ff, #92fe9d)"
+            c = _bar_success
             cls = "badge-green"
         elif sr >= 20:
-            c = "linear-gradient(90deg, #f7971e, #ffd200)"
+            c = _bar_warning
             cls = "badge-yellow"
         else:
-            c = "linear-gradient(90deg, #ff416c, #ff4b2b)"
+            c = _bar_danger
             cls = "badge-red"
         return f'''<div style="display:flex; align-items:center; gap:8px; justify-content:flex-end;">
             <span class="badge {cls}" style="min-width:52px; text-align:center;">{sr:.1f}%</span>
@@ -368,11 +355,11 @@ def render_page():
             return f"R$ {comprometido:,.2f}"
         pct = min((comprometido / teto) * 100, 120)
         if pct >= 100:
-            c = "#ff4b2b"
+            c = _danger
         elif pct >= 85:
-            c = "#ffd200"
+            c = _warning
         else:
-            c = "#00c9ff"
+            c = _brand
         return f'''<div>
             <span style="font-weight:600;">R$ {comprometido:,.2f}</span>
             <div style="height:4px; background:{_plotly_grid}; border-radius:2px; margin-top:4px; overflow:hidden;">
@@ -400,10 +387,10 @@ def render_page():
         row_style = ""
         medal = ""
         if idx == best_sr_idx and len(df_hist) > 2:
-            row_style = 'style="background:rgba(0,230,118,.06); border-left:3px solid #00e676;"'
+            row_style = f'style="background:rgba(21,128,61,.08); border-left:3px solid {_success};"'
             medal = " 🏆"
         elif idx == worst_sr_idx and len(df_hist) > 2:
-            row_style = 'style="background:rgba(255,75,43,.04); border-left:3px solid #ff4b2b;"'
+            row_style = f'style="background:rgba(180,35,24,.06); border-left:3px solid {_danger};"'
 
         table_html += (
             f'<tr {row_style}>'
@@ -465,17 +452,17 @@ def render_page():
             for f in forecast_rows:
                 # Cores por tendência
                 if f["tendencia"] == "↑":
-                    t_color = "#ff4b2b"
-                    t_bg = "rgba(255,75,43,.1)"
+                    t_color = _danger
+                    t_bg = "rgba(180,35,24,.10)"
                 elif f["tendencia"] == "↓":
-                    t_color = "#00e676"
-                    t_bg = "rgba(0,230,118,.1)"
+                    t_color = _success
+                    t_bg = "rgba(21,128,61,.10)"
                 else:
                     t_color = _plotly_grid
                     t_bg = "transparent"
 
                 d_sign = "+" if f["delta_pct"] >= 0 else ""
-                d_color = "#ff4b2b" if f["delta_pct"] > 5 else ("#00e676" if f["delta_pct"] < -5 else "inherit")
+                d_color = _danger if f["delta_pct"] > 5 else (_success if f["delta_pct"] < -5 else "inherit")
 
                 # Bullet micro-chart: média vs previsão
                 max_val = max(f["media"], f["previsao"], 1)
@@ -483,7 +470,7 @@ def render_page():
                 w_prev = (f["previsao"] / max_val) * 60
 
                 bullet = f'''<div style="position:relative; width:60px; height:10px; display:inline-block; vertical-align:middle;">
-                    <div style="position:absolute; width:{w_media:.0f}px; height:10px; background:rgba(99,102,241,.3); border-radius:3px;"></div>
+                    <div style="position:absolute; width:{w_media:.0f}px; height:10px; background:rgba(37,99,235,.22); border-radius:3px;"></div>
                     <div style="position:absolute; width:3px; height:10px; left:{w_prev:.0f}px; background:{t_color}; border-radius:2px;"></div>
                 </div>'''
 
@@ -500,7 +487,7 @@ def render_page():
                 )
             fc_html += '</tbody></table>'
             st.markdown(fc_html, unsafe_allow_html=True)
-            st.caption("💡 EMA dá mais peso aos meses recentes. ↑ subindo · ↓ caindo · → estável. Barra: <span style='color:#6366f1'>█</span> média, <span style='font-weight:700'>|</span> previsão.", unsafe_allow_html=True)
+            st.caption("💡 EMA dá mais peso aos meses recentes. ↑ subindo · ↓ caindo · → estável. Barra: <span style='color:#2563EB'>█</span> média, <span style='font-weight:700'>|</span> previsão.", unsafe_allow_html=True)
 
     # ════════════════════════════════════════════
         # ════════════════════════════════════════════
@@ -517,7 +504,7 @@ def render_page():
             if mes_atual_num in sazonal and sazonal[mes_atual_num]["tipo"] != "normal":
                 info = sazonal[mes_atual_num]
                 if info["tipo"] == "alto":
-                    st.warning(f"📅 **Atenção sazonal:** {info['label']}. Considere provisionar R$ {info['media'] - sum(historico_comprometido.values())/len(historico_comprometido):,.0f} extra.")
+                    st.warning(f"📅 **Atenção sazonal:** {info['label']}. Considere provisionar R\\$ {info['media'] - sum(historico_comprometido.values())/len(historico_comprometido):,.0f} extra.")
                 else:
                     st.success(f"📅 {info['label']}. Aproveite para reforçar seus aportes!")
 
@@ -560,7 +547,7 @@ def render_page():
                 avg = cat_avg[c]
                 if val_atual > avg * 1.2:
                     pct_increase = ((val_atual / avg) - 1) * 100
-                    st.warning(f"⚠️ **{c}**: R$ {val_atual:,.2f} em {mes_atual}. Isso é **{pct_increase:.0f}% acima** da sua média (R$ {avg:,.2f}).")
+                    st.warning(f"⚠️ **{c}**: R\\$ {val_atual:,.2f} em {mes_atual}. Isso é **{pct_increase:.0f}% acima** da sua média (R\\$ {avg:,.2f}).")
                     alertas_gerados = True
 
         if not alertas_gerados:
@@ -590,14 +577,14 @@ def render_page():
         pct_var = 100 - pct_fixos
 
         # Cor do total baseada no teto
-        total_color = "#ff4b2b" if total > TETO_GASTOS else "#00c9ff"
+        total_color = _danger if total > TETO_GASTOS else _brand
 
         # Barra de composição fixos vs variáveis
         comp_bar = f'''<div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
             <span style="font-size:.7rem; opacity:.7;">{pct_fixos:.0f}%</span>
             <div style="width:80px; height:8px; background:{_plotly_grid}; border-radius:4px; overflow:hidden; display:flex;">
-                <div style="width:{pct_fixos}%; height:100%; background:#6366f1;" title="Fixos"></div>
-                <div style="width:{pct_var}%; height:100%; background:#f59e0b;" title="Variáveis"></div>
+                <div style="width:{pct_fixos}%; height:100%; background:{_info};" title="Fixos"></div>
+                <div style="width:{pct_var}%; height:100%; background:{_warning};" title="Variáveis"></div>
             </div>
             <span style="font-size:.7rem; opacity:.7;">{pct_var:.0f}%</span>
         </div>'''
@@ -605,15 +592,15 @@ def render_page():
         det_html += (
             f'<tr>'
             f'<td><strong>{row["Mês"]}</strong></td>'
-            f'<td style="color:#6366f1; font-weight:600;">R$ {fixos:,.2f}</td>'
-            f'<td style="color:#f59e0b; font-weight:600;">R$ {variaveis:,.2f}</td>'
+            f'<td style="color:{_info}; font-weight:600;">R$ {fixos:,.2f}</td>'
+            f'<td style="color:{_warning}; font-weight:600;">R$ {variaveis:,.2f}</td>'
             f'<td style="color:{total_color}; font-weight:800;">R$ {total:,.2f}</td>'
             f'<td>{comp_bar}</td>'
             f'</tr>'
         )
     det_html += '</tbody></table>'
     st.markdown(det_html, unsafe_allow_html=True)
-    st.caption("🟣 Fixos  ·  🟡 Variáveis")
+    st.caption("🔵 Fixos  ·  🟠 Variáveis")
 
     # ════════════════════════════════════════════
     

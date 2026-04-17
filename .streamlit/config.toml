@@ -1,0 +1,7 @@
+[server]
+address = "0.0.0.0"
+
+[theme]
+# Sem "base" fixo: o Streamlit segue a preferência do SO (light/dark).
+# Isso garante que os componentes nativos mudem junto com o CSS customizado
+# que usa @media (prefers-color-scheme: dark).
