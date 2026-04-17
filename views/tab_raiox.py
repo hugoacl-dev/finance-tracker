@@ -281,10 +281,11 @@ def render_page():
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total Variáveis", f"R$ {r['total_variaveis']:,.2f}",
-                  delta=f"R$ {delta_var:+,.0f} vs anterior" if delta_var is not None else None,
-                  delta_color="inverse" if delta_var and delta_var > 0 else "normal")
+                  delta=f"{delta_var:+,.0f} R$ vs anterior" if delta_var is not None else None,
+                  delta_color="inverse")
         c2.metric("Saldo p/ Variáveis", f"R$ {r['saldo_variaveis']:,.2f}",
-                  delta=f"R$ {delta_saldo:+,.0f} vs anterior" if delta_saldo is not None else None)
+                  delta=f"{delta_saldo:+,.0f} R$ vs anterior" if delta_saldo is not None else None,
+                  delta_color="normal")
         c3.metric(aporte_label, f"R$ {r['aporte_real']:,.2f}",
                   delta="OK" if not r["meta_ameacada"] else "⚠ AMEAÇADO",
                   delta_color="normal" if not r["meta_ameacada"] else "inverse")
