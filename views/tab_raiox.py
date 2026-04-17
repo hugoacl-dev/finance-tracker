@@ -289,10 +289,9 @@ def render_page():
         c3.metric(aporte_label, f"R$ {r['aporte_real']:,.2f}",
                   delta="OK" if not r["meta_ameacada"] else "⚠ AMEAÇADO",
                   delta_color="normal" if not r["meta_ameacada"] else "inverse")
-        sr_color = "normal" if savings_rate >= 30 else "inverse"
         c4.metric(savings_label, f"{savings_rate:.1f}%",
                   delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None,
-                  delta_color=sr_color)
+                  delta_color="normal")
         st.caption(
             f"Envelope inicial para variáveis: R$ {r['limite_base_var']:,.2f} · "
             f"Saldo do teto: R$ {r['saldo_teto']:,.2f}"
