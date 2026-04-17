@@ -2,6 +2,21 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 
+def _detect_theme() -> str:
+    """Detecta o tema ativo do Streamlit (light ou dark).
+    
+    Usada pelas views para decisões server-side (ex: template Plotly).
+    Limitação: retorna o valor do config, não a escolha runtime do usuário.
+    """
+    try:
+        base = st.get_option("theme.base")
+        if base:
+            return base
+    except Exception:
+        pass
+    return "dark"
+
+
 def _inject_theme_bridge():
     """
     Injeta um micro-script JS que observa a cor de fundo real do .stApp

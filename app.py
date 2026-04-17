@@ -8,6 +8,7 @@ from views import tab_raiox, tab_historico, tab_importacao, tab_settings
 from core.config import DEFAULTS
 from services import get_data_service
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_git_info() -> dict:
     try:
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +46,8 @@ perfil_ativo = st.session_state["perfil_ativo"]
 
 # Inicializar DataService (Supabase)
 data_service = get_data_service()
+if getattr(data_service, "mode", "") == "local":
+    st.sidebar.warning("Modo local de demonstracao ativo. Dados do Supabase nao estao conectados.")
 
 # Carregar dados do perfil ativo
 cfg_raw = data_service.get_profile_config(perfil_ativo)
@@ -91,7 +94,7 @@ if not all_meses and not onboarding_done and not st.session_state.get("onboardin
 else:
     # TABS
     tab_raio_x, tab_historico_t, tab_insights, tab_config = st.tabs(
-        ["🔬 Raio-X do Ciclo", "📈 Evolução Histórica", "🤖 Insights IA", "⚙️ Configurações"])
+        ["🔬 Raio-X", "📈 Histórico", "🤖 IA", "⚙️ Config"])
 
     with tab_raio_x:
         tab_raiox.render_page()

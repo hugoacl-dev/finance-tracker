@@ -3,14 +3,15 @@ import json
 from google import genai
 from core.models import Transacao
 from pydantic import TypeAdapter
+from services.runtime_secrets import get_secret
 
 def get_gemini_client():
     try:
-        gemini_key = st.secrets.get("GEMINI_API_KEY")
+        gemini_key = get_secret("GEMINI_API_KEY")
         if gemini_key:
             return genai.Client(api_key=gemini_key)
-    except Exception as e:
-        st.error(f"Erro ao inicializar API do Gemini: {e}")
+    except Exception:
+        return None
     return None
 
 def extrair_faturas_imagem(image, model_name: str) -> list[dict]:

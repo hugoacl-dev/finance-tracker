@@ -2,8 +2,9 @@
 Factory para criar instância do DataService.
 Retorna implementação Supabase configurada.
 """
-import streamlit as st
 from services.data_service import DataService
+from services.local_adapter import LocalDataService
+from services.runtime_secrets import has_supabase_credentials
 from services.supabase_adapter import SupabaseAdapter
 
 _data_service_instance = None
@@ -20,6 +21,6 @@ def get_data_service() -> DataService:
     global _data_service_instance
     
     if _data_service_instance is None:
-        _data_service_instance = SupabaseAdapter()
+        _data_service_instance = SupabaseAdapter() if has_supabase_credentials() else LocalDataService()
     
     return _data_service_instance

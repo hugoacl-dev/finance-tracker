@@ -4,8 +4,8 @@ Conecta ao PostgreSQL via Supabase Python Client.
 """
 from supabase import create_client, Client
 from typing import List, Dict, Optional
-import streamlit as st
 from services.data_service import DataService
+from services.runtime_secrets import get_secret
 
 
 class SupabaseAdapter(DataService):
@@ -13,8 +13,10 @@ class SupabaseAdapter(DataService):
     
     def __init__(self):
         """Inicializa conexão com Supabase"""
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
+        url = get_secret("SUPABASE_URL")
+        key = get_secret("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL e SUPABASE_KEY são obrigatórios para o SupabaseAdapter.")
         self.client: Client = create_client(url, key)
         self._profile_cache = {}
     
@@ -538,4 +540,3 @@ class SupabaseAdapter(DataService):
         self.client.table("category_budgets").delete().eq(
             "profile_id", profile_id
         ).eq("categoria", categoria).execute()
-
