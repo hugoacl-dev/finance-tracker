@@ -627,8 +627,12 @@ def render_page():
         else:
             df_edit["Valor"] = pd.to_numeric(df_edit["Valor"], errors="coerce").fillna(0.0)
     
+        # Manter apenas colunas editáveis (esconde Status_Conciliacao do editor)
+        _edit_cols = ["Descricao_Fatura", "Valor", "Tipo"]
+        df_edit_view = df_edit[[c for c in _edit_cols if c in df_edit.columns]].copy()
+
         edited_fixos = st.data_editor(
-            df_edit,
+            df_edit_view,
             num_rows="dynamic",
             use_container_width=True,
             column_config={
@@ -639,6 +643,7 @@ def render_page():
             },
             key=f"editor_fixos_{mes_edit}",
         )
+        st.caption("💡 Para excluir linhas, selecione pelo checkbox à esquerda e pressione **Delete**.")
     
         if st.button(f"💾 Salvar Fixos — {mes_edit}", use_container_width=True, key="save_mensal"):
             clean = edited_fixos.dropna(subset=["Descricao_Fatura"]).copy()
