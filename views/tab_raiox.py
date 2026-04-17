@@ -286,9 +286,17 @@ def render_page():
         c2.metric("Saldo p/ Variáveis", f"R$ {r['saldo_variaveis']:,.2f}",
                   delta=f"{delta_saldo:+,.0f} R$ vs anterior" if delta_saldo is not None else None,
                   delta_color="normal")
+        if r["aporte_real"] < 0:
+            _aporte_delta = "🚨 COMPROMETIDO"
+            _aporte_color = "inverse"
+        elif r["meta_ameacada"]:
+            _aporte_delta = "⚠ AMEAÇADO"
+            _aporte_color = "inverse"
+        else:
+            _aporte_delta = "✅ OK"
+            _aporte_color = "normal"
         c3.metric(aporte_label, f"R$ {r['aporte_real']:,.2f}",
-                  delta="OK" if not r["meta_ameacada"] else "⚠ AMEAÇADO",
-                  delta_color="normal" if not r["meta_ameacada"] else "inverse")
+                  delta=_aporte_delta, delta_color=_aporte_color)
         c4.metric(savings_label, f"{savings_rate:.1f}%",
                   delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None,
                   delta_color="normal")
