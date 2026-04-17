@@ -246,10 +246,11 @@ def render_page():
             </div>
             """, unsafe_allow_html=True)
         else:
+            _saldo_color = "#B42318" if r["saldo_teto"] < 0 else "#0F766E"
             st.markdown(f"""
-            <div class="survival-card">
+            <div class="survival-card{' danger' if r['saldo_teto'] < 0 else ''}">
                 <div class="label">Ciclo encerrado</div>
-                <div class="value" style="color:#2563EB">R$ {r["saldo_teto"]:,.2f}</div>
+                <div class="value" style="color:{_saldo_color}">R$ {r["saldo_teto"]:,.2f}</div>
                 <div class="sub">Saldo final do teto · Fecha {fechamento_display} · Ciclo {mes_sel}</div>
             </div>
             """, unsafe_allow_html=True)
