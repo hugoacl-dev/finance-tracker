@@ -369,18 +369,19 @@ def render_page():
         # ---- Barra de progresso ----
         st.markdown('<p class="section-header">Consumo do Teto</p>', unsafe_allow_html=True)
     
-        pct = min(r["pct_teto"], 100)
-        if pct >= 90:
+        pct_real = r["pct_teto"]
+        pct_bar = min(pct_real, 100)
+        if pct_real >= 90:
             bar_color = "linear-gradient(90deg, #B42318, #F87171)"
-        elif pct >= 85:
+        elif pct_real >= 85:
             bar_color = "linear-gradient(90deg, #B45309, #F59E0B)"
         else:
             bar_color = "linear-gradient(90deg, #0F766E, #34D399)"
     
         st.markdown(f"""
         <div class="progress-outer">
-            <div class="progress-inner" style="width:{pct:.1f}%; background:{bar_color};">
-                {pct:.1f}%  ·  R$ {r['total_comprometido']:,.2f} / R$ {TETO_GASTOS:,.2f}
+            <div class="progress-inner" style="width:{pct_bar:.1f}%; background:{bar_color};">
+                {pct_real:.1f}%  ·  R$ {r['total_comprometido']:,.2f} / R$ {TETO_GASTOS:,.2f}
             </div>
         </div>
         """, unsafe_allow_html=True)
