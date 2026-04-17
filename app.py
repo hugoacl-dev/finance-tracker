@@ -85,7 +85,7 @@ st.session_state["category_budgets_data"] = category_budgets_data
 st.session_state["data_service"] = data_service
 
 # ── Onboarding Guard ──
-all_meses = list(transacoes_data.keys())
+all_meses = list(set(mensal_data) | set(transacoes_data))
 onboarding_done = cfg_raw.get("onboarding_done", False) if cfg_raw else False
 
 if not all_meses and not onboarding_done and not st.session_state.get("onboarding_done"):

@@ -28,7 +28,7 @@ def render_page():
     _plotly_grid  = "rgba(0,0,0,0.08)" if _is_light else "rgba(255,255,255,0.08)"
     _plotly_bg    = "rgba(0,0,0,0)"
 
-    all_meses = sorted(list(transacoes_data.keys()), key=mes_sort_key)
+    all_meses = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
 
     # Resolvendo dependencias de escopo global legado
     RECEITA_BASE = cfg.get("Receita_Base", 0)

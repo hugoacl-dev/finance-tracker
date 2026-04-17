@@ -30,7 +30,7 @@ def render_page():
     _bar_warning = "linear-gradient(90deg, #B45309, #F59E0B)"
     _bar_danger = "linear-gradient(90deg, #B42318, #F87171)"
 
-    all_meses = sorted(list(transacoes_data.keys()), key=mes_sort_key)
+    all_meses = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
 
     RECEITA_BASE   = cfg.get("Receita_Base", 0)
     META_APORTE    = cfg.get("Meta_Aporte", 0)
