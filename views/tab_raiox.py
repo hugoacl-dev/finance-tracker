@@ -293,8 +293,8 @@ def render_page():
                   delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None,
                   delta_color="normal")
         st.caption(
-            f"Envelope inicial para variáveis: R$ {r['limite_base_var']:,.2f} · "
-            f"Saldo do teto: R$ {r['saldo_teto']:,.2f}"
+            f"Envelope inicial para variáveis: R\\$ {r['limite_base_var']:,.2f} · "
+            f"Saldo do teto: R\\$ {r['saldo_teto']:,.2f}"
         )
     
         # ── Score de Saúde Financeira (badge) ──
@@ -322,7 +322,7 @@ def render_page():
                 },
                 "Meta de Aporte": {
                     "descricao": "Se o aporte do ciclo atingiu a meta configurada.",
-                    "valor_atual": f"{aporte_label}: R$ {r['aporte_real']:,.2f}",
+                    "valor_atual": f"{aporte_label}: R\$ {r['aporte_real']:,.2f}",
                     "criterios": "Meta batida → 20pts | Teto ≤ 105% → 12pts | Acima → 5pts",
                 },
                 "Consistência": {
@@ -422,7 +422,7 @@ def render_page():
         if not r["df_config"].empty:
             for tipo, val in tipo_sums.items():
                 label = tipo_icons.get(tipo, f"Fixos — {tipo}")
-                with st.expander(f"{label} — **R$ {val:,.2f}**"):
+                with st.expander(f"{label} — **R\$ {val:,.2f}**"):
                     df_tipo = r["df_config"][tipos_col == tipo].copy()
                     if not df_tipo.empty:
                         if tipo.strip().lower() == "cartao":
@@ -536,7 +536,7 @@ def render_page():
 
         # ---- Créditos e Estornos ----
         if not df_creditos.empty:
-            with st.expander(f"↩ Créditos e Estornos — **− R$ {total_creditos:,.2f}**"):
+            with st.expander(f"↩ Créditos e Estornos — **− R\$ {total_creditos:,.2f}**"):
                 cols_show = [c for c in ["Descricao", "Valor", "Cartao", "Titular"] if c in df_creditos.columns]
                 df_cred_show = df_creditos[cols_show].rename(columns={
                     "Descricao": "Descrição", "Valor": "Valor (R$)", "Cartao": "Cartão", "Titular": "Titular"
