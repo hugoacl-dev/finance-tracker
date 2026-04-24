@@ -610,48 +610,99 @@ def render_page():
                     )
                     st.plotly_chart(fig_radar, use_container_width=True)
 
-                st.markdown('<p class="section-header">Controle de Limites por Categoria</p>', unsafe_allow_html=True)
-
-                # Carregar limites definidos pelo usuário
-                _cat_budgets = {}
-                _ds = st.session_state.get("data_service")
-                if _ds:
-                    try:
-                        _cat_budgets = _ds.get_category_budgets(perfil_ativo)
-                    except Exception:
-                        pass
-
-                for c in categorias_analise:
-                    val_atual = curr_sums.get(c, 0)
-                    # Prioridade: limite definido pelo usuário > média histórica
-                    limite = _cat_budgets.get(c, cat_hist_avg.get(c, 0))
-                    fonte = "Orçamento" if c in _cat_budgets else "Média Hist."
-                    
-                    if limite > 0:
-                        pct_cat = (val_atual / limite) * 100
-                        pct_visual = min(pct_cat, 100)
+                col_limites, col_maiores = st.columns(2)
+                
+                with col_limites:
+                    st.markdown('<p class="section-header">Controle de Limites por Categoria</p>', unsafe_allow_html=True)
+    
+                    # Carregar limites definidos pelo usuário
+                    _cat_budgets = {}
+                    _ds = st.session_state.get("data_service")
+                    if _ds:
+                        try:
+                            _cat_budgets = _ds.get_category_budgets(perfil_ativo)
+                        except Exception:
+                            pass
+    
+                    categorias_ordenadas = sorted(categorias_analise, key=lambda c: curr_sums.get(c, 0), reverse=True)
+                    for c in categorias_ordenadas:
+                        val_atual = curr_sums.get(c, 0)
+                        share = (val_atual / r["total_variaveis"] * 100) if r.get("total_variaveis", 0) > 0 else 0
                         
-                        if pct_cat >= 100:
-                            bar_color = "linear-gradient(90deg, #B42318, #F87171)" # Estourou
-                            status_icon = "🔴"
-                        elif pct_cat >= 80:
-                            bar_color = "linear-gradient(90deg, #B45309, #F59E0B)" # Alerta
-                            status_icon = "🟡"
-                        else:
-                            bar_color = "linear-gradient(90deg, #0F766E, #34D399)" # Seguro
-                            status_icon = "🟢"
+                        # Prioridade: limite definido pelo usuário
+                        limite = _cat_budgets.get(c, 0)
+                        
+                        if limite > 0:
+                            pct_cat = (val_atual / limite) * 100
+                            pct_visual = min(pct_cat, 100)
                             
-                        st.markdown(f"""
-                        <div class="cat-gauge-label">
-                            <span>{status_icon} <strong>{c}</strong> <small style="opacity:.5">({fonte})</small></span>
-                            <span>R$ {val_atual:,.2f} / R$ {limite:,.2f} ({pct_cat:.1f}%)</span>
-                        </div>
-                        <div class="progress-outer" style="height: 20px; margin-bottom: 1.2rem;">
-                            <div class="progress-inner" style="width:{pct_visual:.1f}%; background:{bar_color}; font-size: 0.75rem; padding-right: 8px;">
-                                {pct_cat:.0f}%
+                            if pct_cat >= 100:
+                                bar_color = "linear-gradient(90deg, #B42318, #F87171)" # Estourou
+                                status_icon = "🔴"
+                            elif pct_cat >= 80:
+                                bar_color = "linear-gradient(90deg, #B45309, #F59E0B)" # Alerta
+                                status_icon = "🟡"
+                            else:
+                                bar_color = "linear-gradient(90deg, #0F766E, #34D399)" # Seguro
+                                status_icon = "🟢"
+                                
+                            st.markdown(f"""
+                            <div class="cat-gauge-label">
+                                <span>{status_icon} <strong>{c}</strong> <small style="opacity:.5">(Orçamento)</small></span>
+                                <span>R$ {val_atual:,.2f} / R$ {limite:,.2f} ({pct_cat:.1f}%)</span>
                             </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            <div class="progress-outer" style="height: 20px; margin-bottom: 1.2rem;">
+                                <div class="progress-inner" style="width:{pct_visual:.1f}%; background:{bar_color}; font-size: 0.75rem; padding-right: 8px;">
+                                    {pct_cat:.0f}%
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        elif val_atual > 0:
+                            # Em vez de média histórica, usa % dos variáveis
+                            pct_visual = min(share, 100)
+                            bar_color = "linear-gradient(90deg, #0F766E, #20C997)" # Cor neutra/saudável
+                            
+                            st.markdown(f"""
+                            <div class="cat-gauge-label" style="margin-bottom: 0.2rem;">
+                                <span><strong>{c}</strong></span>
+                                <span><strong>R$ {val_atual:,.2f}</strong></span>
+                            </div>
+                            <div class="progress-outer" style="height: 12px; margin-bottom: 0.2rem;">
+                                <div class="progress-inner" style="width:{pct_visual:.1f}%; background:{bar_color};"></div>
+                            </div>
+                            <div class="cat-gauge-label" style="margin-bottom: 1.2rem;">
+                                <small style="opacity:.6">{share:.1f}% dos variáveis, sem limite cadastrado</small>
+                                <span></span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                with col_maiores:
+                    st.markdown('<p class="section-header">Maiores Lançamentos</p>', unsafe_allow_html=True)
+                    if "Tipo" in r["df_ops"].columns:
+                        df_deb = r["df_ops"][r["df_ops"]["Tipo"] == "debito"]
+                    else:
+                        df_deb = r["df_ops"]
+                        
+                    maiores_txs = df_deb.sort_values("Valor", ascending=False).head(5).to_dict("records") if not df_deb.empty else []
+                    
+                    if maiores_txs:
+                        rows = []
+                        for tx in maiores_txs:
+                            valor = float(tx.get("Valor", 0) or 0)
+                            desc = html_mod.escape(str(tx.get("Descricao", "")))
+                            cat = html_mod.escape(str(tx.get("Categoria", "Outros")))
+                            rows.append(f"""
+                            <div style="padding: 0.8rem; background: var(--bg-secondary, rgba(0,0,0,0.03)); border: 1px solid var(--border-color, rgba(0,0,0,0.05)); border-radius: 8px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 1rem;">
+                                    <div style="font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary);">{desc}</div>
+                                    <div style="font-size: 0.8rem; color: var(--text-secondary);">{cat}</div>
+                                </div>
+                                <div style="font-weight: 700; font-size: 1rem; white-space: nowrap; color: var(--text-primary);">R$ {valor:,.2f}</div>
+                            </div>
+                            """)
+                        st.markdown("".join(rows), unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div style="color:var(--text-secondary); font-size:0.9rem;">Sem lançamentos neste ciclo.</div>', unsafe_allow_html=True)
     
         # ---- Tabela de lançamentos com busca, anomalias e parcelamentos ----
         st.markdown(f'<p class="section-header">Lançamentos — {mes_sel}</p>', unsafe_allow_html=True)
