@@ -37,6 +37,12 @@ def _get_git_info() -> dict:
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
+if st.query_params.get("prototype") == "raiox":
+    from views.prototype_raiox_fintech import render_page as render_raiox_prototype
+
+    render_raiox_prototype()
+    st.stop()
+
 # Perfil Ativo (Multi-Tenant)
 st.session_state["perfil_ativo"] = st.sidebar.radio("👤 Perfil Atual", ["Principal", "Dependente"], key="perfil_global")
 
