@@ -4,9 +4,12 @@ import statistics
 import pandas as pd
 import streamlit as st
 
+from core.config import DEFAULTS
 from core.utils import mes_sort_key
 from services.data_engine import calcular_score_financeiro, processar_mes
 from services.local_adapter import LocalDataService
+from services.runtime_secrets import has_supabase_credentials
+from services.supabase_adapter import SupabaseAdapter
 
 
 def _money(value: float) -> str:
@@ -20,6 +23,13 @@ def _pct(value: float) -> str:
 
 def _escape(value: object) -> str:
     return html.escape(str(value))
+
+
+def _float(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _inject_styles() -> None:
@@ -230,6 +240,14 @@ def _inject_styles() -> None:
             line-height: 1.35;
         }
 
+        .proto-raiox-empty {
+            border: 1px dashed var(--proto-border);
+            border-radius: 12px;
+            color: var(--proto-muted);
+            font-size: 0.86rem;
+            padding: 0.85rem;
+        }
+
         .proto-raiox-status-good {
             color: var(--proto-green);
         }
@@ -363,15 +381,166 @@ def _inject_styles() -> None:
     )
 
 
-def _build_context() -> dict:
+def _config_from_profile_row(row: dict) -> dict:
+    cfg = DEFAULTS.copy()
+    cfg.update(
+        {
+            "Receita_Base": _float(row.get("receita_base", cfg.get("Receita_Base"))),
+            "Meta_Aporte": _float(row.get("meta_aporte", cfg.get("Meta_Aporte"))),
+            "Teto_Gastos": _float(row.get("teto_gastos", cfg.get("Teto_Gastos"))),
+            "Dia_Fechamento": row.get("dia_fechamento", cfg.get("Dia_Fechamento")),
+            "Gemini_Model": row.get("gemini_model", cfg.get("Gemini_Model")),
+            "Gemini_Vision_Model": row.get("gemini_vision_model", cfg.get("Gemini_Vision_Model")),
+            "Regras_IA": row.get("regras_ia", cfg.get("Regras_IA", "")),
+            "Ultima_Importacao": row.get("ultima_importacao"),
+            "Cartoes_Aceitos": row.get("cartoes_aceitos"),
+            "Cartoes_Excluidos": row.get("cartoes_excluidos"),
+        }
+    )
+    return {key: value for key, value in cfg.items() if value is not None}
+
+
+def _load_local_snapshot(perfil: str, error: str = "") -> dict:
     service = LocalDataService()
-    perfil = "Principal"
     cfg = service.get_profile_config(perfil)
-    mensal_data = service.get_mensal_data(perfil)
-    transacoes_data = service.get_transacoes_data(perfil)
-    budgets = service.get_category_budgets(perfil)
+    return {
+        "source": "Demo local",
+        "source_detail": error,
+        "profile_options": ["Principal", "Dependente"],
+        "perfil": perfil,
+        "cfg": {**DEFAULTS, **cfg},
+        "mensal_data": service.get_mensal_data(perfil),
+        "transacoes_data": service.get_transacoes_data(perfil),
+        "budgets": service.get_category_budgets(perfil),
+    }
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_profile_options() -> dict:
+    if not has_supabase_credentials():
+        return {
+            "source": "Demo local",
+            "profile_options": ["Principal", "Dependente"],
+            "error": "Credenciais do Supabase ausentes neste ambiente.",
+        }
+
+    try:
+        adapter = SupabaseAdapter()
+        result = adapter.client.table("profiles").select("name").order("name").execute()
+        profile_options = [row["name"] for row in result.data if row.get("name")]
+        if not profile_options:
+            return {
+                "source": "Demo local",
+                "profile_options": ["Principal", "Dependente"],
+                "error": "Nenhum perfil encontrado no Supabase.",
+            }
+        return {"source": "Supabase", "profile_options": profile_options, "error": ""}
+    except Exception as exc:
+        return {
+            "source": "Demo local",
+            "profile_options": ["Principal", "Dependente"],
+            "error": f"Falha ao ler perfis do Supabase: {exc}",
+        }
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_profile_snapshot(perfil: str, source: str) -> dict:
+    if source != "Supabase":
+        return _load_local_snapshot(perfil)
+
+    try:
+        adapter = SupabaseAdapter()
+        profile_result = (
+            adapter.client.table("profiles")
+            .select("*")
+            .eq("name", perfil)
+            .limit(1)
+            .execute()
+        )
+        if not profile_result.data:
+            return _load_local_snapshot(perfil, "Perfil não encontrado no Supabase.")
+
+        profile_row = profile_result.data[0]
+        profile_id = profile_row["id"]
+        cfg = _config_from_profile_row(profile_row)
+
+        fixos_result = (
+            adapter.client.table("gastos_fixos")
+            .select("*")
+            .eq("profile_id", profile_id)
+            .execute()
+        )
+        trans_result = (
+            adapter.client.table("transacoes")
+            .select("*")
+            .eq("profile_id", profile_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        budgets_result = (
+            adapter.client.table("category_budgets")
+            .select("categoria, limite")
+            .eq("profile_id", profile_id)
+            .execute()
+        )
+
+        mensal_data = {}
+        for item in fixos_result.data or []:
+            mes = item.get("mes")
+            if not mes:
+                continue
+            mensal_data.setdefault(mes, []).append(
+                {
+                    "Descricao_Fatura": item.get("descricao_fatura"),
+                    "Valor": _float(item.get("valor")),
+                    "Tipo": item.get("tipo"),
+                    "Status_Conciliacao": item.get("status_conciliacao"),
+                }
+            )
+
+        transacoes_data = {}
+        for item in trans_result.data or []:
+            mes = item.get("mes")
+            if not mes:
+                continue
+            transacoes_data.setdefault(mes, []).append(
+                {
+                    "Descricao": item.get("descricao"),
+                    "Valor": _float(item.get("valor")),
+                    "Cartao": item.get("cartao"),
+                    "Titular": item.get("titular"),
+                    "Categoria": item.get("categoria"),
+                    "Tipo": item.get("tipo", "debito"),
+                }
+            )
+
+        budgets = {
+            row["categoria"]: _float(row.get("limite"))
+            for row in budgets_result.data or []
+            if row.get("categoria")
+        }
+
+        return {
+            "source": "Supabase",
+            "source_detail": "Leitura real, sem gravação.",
+            "profile_options": [perfil],
+            "perfil": perfil,
+            "cfg": cfg,
+            "mensal_data": mensal_data,
+            "transacoes_data": transacoes_data,
+            "budgets": budgets,
+        }
+    except Exception as exc:
+        return _load_local_snapshot(perfil, f"Falha ao ler dados reais: {exc}")
+
+
+def _build_context(snapshot: dict, mes: str) -> dict:
+    perfil = snapshot["perfil"]
+    cfg = snapshot["cfg"]
+    mensal_data = snapshot["mensal_data"]
+    transacoes_data = snapshot["transacoes_data"]
+    budgets = snapshot["budgets"]
     meses = sorted(set(mensal_data) | set(transacoes_data), key=mes_sort_key)
-    mes = meses[-1]
 
     df_c = pd.DataFrame(mensal_data.get(mes, []))
     df_o = pd.DataFrame(transacoes_data.get(mes, []))
@@ -446,22 +615,41 @@ def _build_context() -> dict:
                 }
             )
 
+    categorias_alerta = sorted(
+        [cat for cat in categorias if cat["limite"] > 0],
+        key=lambda item: item["pct_limite"],
+        reverse=True,
+    )
+    if not categorias_alerta:
+        categorias_alerta = sorted(categorias, key=lambda item: item["share"], reverse=True)
+
     pendentes = []
     if not r["df_config"].empty and "Tipo" in r["df_config"].columns:
         df_cartao = r["df_config"][r["df_config"]["Tipo"].astype(str).str.lower() == "cartao"]
         if "Status_Conciliacao" in df_cartao.columns:
             pendentes = df_cartao[df_cartao["Status_Conciliacao"] != "✅ Confirmado"].to_dict("records")
 
+    transacoes = []
+    maiores_transacoes = []
+    if not df_debitos.empty:
+        transacoes = df_debitos.tail(6).iloc[::-1].to_dict("records")
+        maiores_transacoes = df_debitos.sort_values("Valor", ascending=False).head(3).to_dict("records")
+
     return {
         "perfil": perfil,
+        "source": snapshot["source"],
+        "source_detail": snapshot.get("source_detail", ""),
+        "meses": meses,
         "cfg": cfg,
         "mes": mes,
         "resultado": r,
         "score": score,
         "savings_rate": savings_rate,
         "categorias": categorias,
+        "categorias_alerta": categorias_alerta,
         "pendentes": pendentes,
-        "transacoes": df_debitos.head(6).to_dict("records") if not df_debitos.empty else [],
+        "transacoes": transacoes,
+        "maiores_transacoes": maiores_transacoes,
     }
 
 
@@ -514,11 +702,35 @@ def _bar_row(label: str, value: float, pct: float, meta: str = "") -> str:
     """
 
 
+def _text_row(label: str, value: str, detail: str = "") -> str:
+    return f"""
+    <div class="proto-raiox-row">
+        <div class="proto-raiox-row-head">
+            <span>{_escape(label)}</span>
+            <span>{_escape(value)}</span>
+        </div>
+        <div class="proto-raiox-row-meta">{_escape(detail)}</div>
+    </div>
+    """
+
+
+def _mini_item(label: str, value: str, detail: str = "") -> str:
+    return f"""
+    <div class="proto-raiox-mini">
+        <div class="proto-raiox-label">{_escape(label)}</div>
+        <div class="proto-raiox-value">{_escape(value)}</div>
+        <div class="proto-raiox-delta">{_escape(detail)}</div>
+    </div>
+    """
+
+
 def _category_rows(ctx: dict, use_limit: bool = False) -> str:
     rows = []
     categorias = ctx["categorias"][:6]
     if use_limit:
-        categorias = sorted(ctx["categorias"], key=lambda item: item["pct_limite"], reverse=True)[:6]
+        categorias = ctx["categorias_alerta"][:6]
+    if not categorias:
+        return '<div class="proto-raiox-empty">Sem gastos variáveis neste ciclo.</div>'
     for cat in categorias:
         pct = cat["pct_limite"] if use_limit and cat["limite"] > 0 else cat["share"]
         meta = f" do limite de {_money(cat['limite'])}" if use_limit and cat["limite"] > 0 else " dos variáveis"
@@ -526,8 +738,97 @@ def _category_rows(ctx: dict, use_limit: bool = False) -> str:
     return "\n".join(rows)
 
 
+def _executive_list(ctx: dict) -> str:
+    r = ctx["resultado"]
+    cfg = ctx["cfg"]
+    top_cat = ctx["categorias"][0] if ctx["categorias"] else None
+    alert_cat = ctx["categorias_alerta"][0] if ctx["categorias_alerta"] else None
+    maior_tx = ctx["maiores_transacoes"][0] if ctx["maiores_transacoes"] else None
+
+    status_teto = "Dentro do teto" if r["saldo_teto"] >= 0 else "Acima do teto"
+    rows = [
+        _text_row(
+            "Situação do ciclo",
+            status_teto,
+            f"{_money(abs(r['saldo_teto']))} {'de folga' if r['saldo_teto'] >= 0 else 'acima'} contra o teto de {_money(cfg['Teto_Gastos'])}.",
+        )
+    ]
+
+    if top_cat:
+        rows.append(
+            _text_row(
+                "Maior concentração",
+                top_cat["categoria"],
+                f"{_money(top_cat['valor'])}, {_pct(top_cat['share'])} dos gastos variáveis.",
+            )
+        )
+
+    if alert_cat:
+        if alert_cat["limite"] > 0:
+            rows.append(
+                _text_row(
+                    "Limite mais pressionado",
+                    alert_cat["categoria"],
+                    f"{_pct(alert_cat['pct_limite'])} do limite de {_money(alert_cat['limite'])}.",
+                )
+            )
+        else:
+            rows.append(
+                _text_row(
+                    "Sem limite cadastrado",
+                    alert_cat["categoria"],
+                    "Use este sinal apenas como leitura de concentração, não como estouro de orçamento.",
+                )
+            )
+
+    if maior_tx:
+        rows.append(
+            _text_row(
+                "Maior lançamento",
+                _money(_float(maior_tx.get("Valor"))),
+                str(maior_tx.get("Descricao", "Sem descrição")),
+            )
+        )
+
+    return "\n".join(rows)
+
+
+def _priority_list(ctx: dict) -> str:
+    r = ctx["resultado"]
+    cfg = ctx["cfg"]
+    alert_cat = ctx["categorias_alerta"][0] if ctx["categorias_alerta"] else None
+    pending_count = len(ctx["pendentes"])
+    teto_detail = f"{_pct(r['pct_teto'])} usado de {_money(cfg['Teto_Gastos'])}."
+
+    items = [
+        _mini_item(
+            "Prioridade 1",
+            "Preservar teto" if r["saldo_teto"] >= 0 else "Recompor teto",
+            teto_detail,
+        )
+    ]
+
+    if alert_cat:
+        if alert_cat["limite"] > 0:
+            detail = f"{_pct(alert_cat['pct_limite'])} do limite de {_money(alert_cat['limite'])}."
+        else:
+            detail = f"{_pct(alert_cat['share'])} dos variáveis, sem limite cadastrado."
+        items.append(_mini_item("Prioridade 2", alert_cat["categoria"], detail))
+
+    items.append(
+        _mini_item(
+            "Conferência",
+            f"{pending_count} pendente(s)" if pending_count else "Sem pendências",
+            "Fixos de cartão antes da decisão final.",
+        )
+    )
+    return "\n".join(items)
+
+
 def _render_tx_list(ctx: dict) -> str:
     rows = []
+    if not ctx["transacoes"]:
+        return '<div class="proto-raiox-empty">Sem lançamentos variáveis neste ciclo.</div>'
     for tx in ctx["transacoes"]:
         rows.append(
             f"""
@@ -574,8 +875,8 @@ def _render_premium(ctx: dict) -> None:
                         {_category_rows(ctx)}
                     </div>
                     <div class="proto-raiox-panel">
-                        <div class="proto-raiox-section-title">Categorias em atencao</div>
-                        {_category_rows(ctx, use_limit=True)}
+                        <div class="proto-raiox-section-title">Leitura executiva</div>
+                        {_executive_list(ctx)}
                     </div>
                 </div>
                 <div class="proto-raiox-grid-2">
@@ -649,8 +950,10 @@ def _render_impact(ctx: dict) -> None:
                         {_category_rows(ctx)}
                     </div>
                     <div class="proto-raiox-panel">
-                        <div class="proto-raiox-section-title">Riscos e limites</div>
-                        {_category_rows(ctx, use_limit=True)}
+                        <div class="proto-raiox-section-title">Prioridades do ciclo</div>
+                        <div class="proto-raiox-list">
+                            {_priority_list(ctx)}
+                        </div>
                     </div>
                 </div>
                 <div class="proto-raiox-panel">
@@ -731,9 +1034,47 @@ def _render_minimal(ctx: dict) -> None:
 
 def render_page() -> None:
     _inject_styles()
-    ctx = _build_context()
 
-    st.caption("Protótipo isolado · não usa Supabase · não altera a Raio-X atual")
+    profile_meta = _load_profile_options()
+    profile_options = profile_meta["profile_options"]
+    default_profile = "Principal" if "Principal" in profile_options else profile_options[0]
+    if st.session_state.get("proto_raiox_profile") not in profile_options:
+        st.session_state["proto_raiox_profile"] = default_profile
+
+    perfil = st.selectbox(
+        "Perfil",
+        profile_options,
+        key="proto_raiox_profile",
+    )
+
+    snapshot = _load_profile_snapshot(perfil, profile_meta["source"])
+    if profile_meta.get("error") and snapshot["source"] == "Demo local":
+        snapshot["source_detail"] = profile_meta["error"]
+
+    meses = sorted(
+        set(snapshot["mensal_data"]) | set(snapshot["transacoes_data"]),
+        key=mes_sort_key,
+    )
+    if not meses:
+        st.warning("Nenhum ciclo encontrado para este perfil. O protótipo não grava dados.")
+        return
+
+    mes = st.selectbox(
+        "Ciclo",
+        meses,
+        index=len(meses) - 1,
+        key=f"proto_raiox_cycle_{perfil}",
+    )
+
+    if st.button("Atualizar dados", key="proto_raiox_refresh"):
+        _load_profile_options.clear()
+        _load_profile_snapshot.clear()
+        st.rerun()
+
+    ctx = _build_context(snapshot, mes)
+
+    source_detail = f" · {ctx['source_detail']}" if ctx.get("source_detail") else ""
+    st.caption(f"Protótipo isolado · dados: {ctx['source']}{source_detail} · não altera a Raio-X atual")
     variant = st.radio(
         "Direção visual",
         ["Premium sóbria", "Impactante visual", "Minimalista extrema"],
