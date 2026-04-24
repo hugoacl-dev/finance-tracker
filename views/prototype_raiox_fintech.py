@@ -1,5 +1,6 @@
 import html
 import statistics
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -164,14 +165,14 @@ def _inject_styles() -> None:
 
         .proto-raiox-label {
             color: var(--proto-muted);
-            font-size: 0.76rem;
+            font-size: 0.82rem;
             font-weight: 800;
             margin-bottom: 0.28rem;
         }
 
         .proto-raiox-value {
             color: var(--proto-text);
-            font-size: clamp(1.1rem, 5vw, 1.75rem);
+            font-size: clamp(1.25rem, 5vw, 1.75rem);
             font-weight: 850;
             line-height: 1.1;
         }
@@ -268,29 +269,44 @@ def _inject_styles() -> None:
             border-color: rgba(255,255,255,0.10);
         }
 
-        .proto-raiox-impact .proto-raiox-title,
-        .proto-raiox-impact .proto-raiox-headline-value,
-        .proto-raiox-impact .proto-raiox-copy {
+        .proto-raiox-impact .proto-raiox-hero.is-danger {
+            background:
+                linear-gradient(135deg, rgba(180, 35, 24, 0.22), rgba(120, 30, 20, 0.14)),
+                #1A1114;
+            border-color: rgba(248,113,113,0.18);
+        }
+
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-title,
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-headline-value,
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-copy {
             color: #F8FAF7;
         }
 
-        .proto-raiox-impact .proto-raiox-headline-value {
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-headline-value {
             color: #63E6BE;
         }
 
-        .proto-raiox-impact .proto-raiox-mini {
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-headline-value.is-negative {
+            color: #FF6B6B;
+        }
+
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-mini {
             background: rgba(255,255,255,0.08);
             border-color: rgba(255,255,255,0.12);
             padding: 0.9rem;
         }
 
-        .proto-raiox-impact .proto-raiox-label,
-        .proto-raiox-impact .proto-raiox-delta {
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-label,
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-delta {
             color: rgba(248,250,247,0.72);
         }
 
-        .proto-raiox-impact .proto-raiox-value {
+        .proto-raiox-impact .proto-raiox-hero .proto-raiox-value {
             color: #FFFFFF;
+        }
+
+        .proto-raiox-value.is-negative {
+            color: var(--proto-red) !important;
         }
 
         .proto-raiox-minimal .proto-raiox-hero,
@@ -633,7 +649,30 @@ def _build_context(snapshot: dict, mes: str) -> dict:
     maiores_transacoes = []
     if not df_debitos.empty:
         transacoes = df_debitos.tail(6).iloc[::-1].to_dict("records")
-        maiores_transacoes = df_debitos.sort_values("Valor", ascending=False).head(3).to_dict("records")
+        maiores_transacoes = df_debitos.sort_values("Valor", ascending=False).head(5).to_dict("records")
+
+    # Determinar se o ciclo ainda está aberto
+    is_ciclo_ativo = False
+    try:
+        hoje = date.today()
+        m_s = str(mes).strip().lower()
+        dia_fech = int(cfg.get("Dia_Fechamento", 13))
+        if "/" in m_s:
+            mm, aa = m_s.split("/")
+            mes_ciclo = int(mm)
+        else:
+            meses_pt = {
+                "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+                "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+            }
+            partes = m_s.split()
+            mes_ciclo = meses_pt.get(partes[0][:3], hoje.month)
+            aa = partes[1] if len(partes) > 1 else str(hoje.year)
+        ano_ciclo = int(aa) if len(str(aa)) == 4 else 2000 + int(aa)
+        data_fechamento = date(ano_ciclo, mes_ciclo, min(dia_fech, 28))
+        is_ciclo_ativo = hoje <= data_fechamento
+    except Exception:
+        pass
 
     return {
         "perfil": perfil,
@@ -650,22 +689,43 @@ def _build_context(snapshot: dict, mes: str) -> dict:
         "pendentes": pendentes,
         "transacoes": transacoes,
         "maiores_transacoes": maiores_transacoes,
+        "is_ciclo_ativo": is_ciclo_ativo,
     }
 
 
-def _hero_copy(ctx: dict) -> tuple[str, str, str]:
+def _hero_copy(ctx: dict) -> tuple[str, str, str, bool]:
+    """Retorna (titulo, valor, copy, is_negative)."""
     r = ctx["resultado"]
     mes = ctx["mes"]
+    ativo = ctx.get("is_ciclo_ativo", False)
+
+    if ativo:
+        if r["saldo_teto"] >= 0:
+            return (
+                f"Ciclo {mes} em andamento",
+                _money(r["saldo_teto"]),
+                "Saldo disponível até o fechamento. Continue acompanhando para garantir que o teto seja respeitado.",
+                False,
+            )
+        return (
+            f"Ciclo {mes} acima do teto",
+            _money(abs(r["saldo_teto"])),
+            "O ciclo ainda não fechou, mas já ultrapassou o teto. Priorize reduzir gastos até o fechamento.",
+            True,
+        )
+
     if r["saldo_teto"] >= 0:
         return (
             f"Ciclo {mes} encerrado com folga",
             _money(r["saldo_teto"]),
             "O teto foi respeitado e o aporte ficou preservado. O foco agora é entender o que mais puxou o consumo.",
+            False,
         )
     return (
         f"Ciclo {mes} acima do teto",
         _money(abs(r["saldo_teto"])),
         "O ciclo fechou acima do planejado. Priorize categorias fora da curva e despesas recorrentes.",
+        True,
     )
 
 
@@ -678,11 +738,12 @@ def _score_badge(score: dict) -> str:
     return f'<span class="proto-raiox-pill {cls}">Score {score["score"]}/100 · {_escape(score["label"])}</span>'
 
 
-def _metric(label: str, value: str, detail: str = "") -> str:
+def _metric(label: str, value: str, detail: str = "", is_negative: bool = False) -> str:
+    neg_cls = " is-negative" if is_negative else ""
     return f"""
     <div class="proto-raiox-card">
         <div class="proto-raiox-label">{_escape(label)}</div>
-        <div class="proto-raiox-value">{_escape(value)}</div>
+        <div class="proto-raiox-value{neg_cls}">{_escape(value)}</div>
         <div class="proto-raiox-delta">{_escape(detail)}</div>
     </div>
     """
@@ -841,10 +902,29 @@ def _render_tx_list(ctx: dict) -> str:
     return "\n".join(rows)
 
 
+def _render_top_tx_list(ctx: dict) -> str:
+    """Renderiza os maiores lançamentos do ciclo, ordenados por valor."""
+    txs = ctx.get("maiores_transacoes", [])
+    if not txs:
+        return '<div class="proto-raiox-empty">Sem lançamentos variáveis neste ciclo.</div>'
+    rows = []
+    for tx in txs:
+        valor = float(tx.get("Valor", 0) or 0)
+        rows.append(
+            f"""
+            <div class="proto-raiox-tx">
+                <strong>{_escape(tx.get("Descricao", ""))}</strong>
+                <span>{_escape(tx.get("Categoria", "Outros"))} · {_money(valor)}</span>
+            </div>
+            """
+        )
+    return "\n".join(rows)
+
+
 def _render_premium(ctx: dict) -> None:
     r = ctx["resultado"]
     cfg = ctx["cfg"]
-    title, value, copy = _hero_copy(ctx)
+    title, value, copy, _neg = _hero_copy(ctx)
     st.html(
         f"""
         <div class="proto-raiox-shell proto-raiox-premium">
@@ -899,7 +979,7 @@ def _render_premium(ctx: dict) -> None:
 def _render_impact(ctx: dict) -> None:
     r = ctx["resultado"]
     cfg = ctx["cfg"]
-    title, value, copy = _hero_copy(ctx)
+    title, value, copy, is_negative = _hero_copy(ctx)
     top_cat = ctx["categorias"][0] if ctx["categorias"] else {"categoria": "Sem categoria", "valor": 0, "share": 0}
     pending_text = f"{len(ctx['pendentes'])} fixo pendente" if ctx["pendentes"] else "Fixos conciliados"
     st.html(
@@ -910,12 +990,12 @@ def _render_impact(ctx: dict) -> None:
                     <span class="proto-raiox-kicker">Impactante visual · protótipo</span>
                     <span class="proto-raiox-pill">Abrir, entender, agir</span>
                 </div>
-                <div class="proto-raiox-hero">
+                <div class="proto-raiox-hero{' is-danger' if is_negative else ''}">
                     <div class="proto-raiox-hero-inner">
                         <div class="proto-raiox-grid-2">
                             <div>
                                 <div class="proto-raiox-title">{_escape(title)}</div>
-                                <p class="proto-raiox-headline-value">{_escape(value)}</p>
+                                <p class="proto-raiox-headline-value{' is-negative' if is_negative else ''}">{_escape(value)}</p>
                                 <p class="proto-raiox-copy">{_escape(copy)}</p>
                             </div>
                             <div class="proto-raiox-list">
@@ -939,8 +1019,8 @@ def _render_impact(ctx: dict) -> None:
                     </div>
                 </div>
                 <div class="proto-raiox-grid">
-                    {_metric("Teto usado", _pct(r["pct_teto"]), f'{_money(r["total_comprometido"])} de {_money(cfg["Teto_Gastos"])}')}
-                    {_metric("Folga", _money(r["saldo_teto"]), "Contra o teto do ciclo")}
+                    {_metric("Teto usado", _pct(r["pct_teto"]), f'{_money(r["total_comprometido"])} de {_money(cfg["Teto_Gastos"])}', is_negative=r["pct_teto"] > 100)}
+                    {_metric("Folga", _money(r["saldo_teto"]), "Contra o teto do ciclo", is_negative=r["saldo_teto"] < 0)}
                     {_metric("Aporte", _money(r["aporte_real"]), f'Meta {_money(cfg["Meta_Aporte"])}')}
                     {_metric("Savings rate", _pct(ctx["savings_rate"]), "Resultado do ciclo")}
                 </div>
@@ -956,9 +1036,15 @@ def _render_impact(ctx: dict) -> None:
                         </div>
                     </div>
                 </div>
-                <div class="proto-raiox-panel">
-                    <div class="proto-raiox-section-title">Extrato essencial</div>
-                    {_render_tx_list(ctx)}
+                <div class="proto-raiox-grid-2">
+                    <div class="proto-raiox-panel">
+                        <div class="proto-raiox-section-title">Maiores lançamentos</div>
+                        {_render_top_tx_list(ctx)}
+                    </div>
+                    <div class="proto-raiox-panel">
+                        <div class="proto-raiox-section-title">Extrato essencial</div>
+                        {_render_tx_list(ctx)}
+                    </div>
                 </div>
             </div>
         </div>
@@ -969,7 +1055,7 @@ def _render_impact(ctx: dict) -> None:
 def _render_minimal(ctx: dict) -> None:
     r = ctx["resultado"]
     cfg = ctx["cfg"]
-    title, value, copy = _hero_copy(ctx)
+    title, value, copy, _neg = _hero_copy(ctx)
     top_cat = ctx["categorias"][0] if ctx["categorias"] else {"categoria": "Sem categoria", "valor": 0, "share": 0}
     st.html(
         f"""

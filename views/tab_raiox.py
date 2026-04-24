@@ -88,29 +88,7 @@ def render_page():
         aporte_label = "Aporte Projetado" if is_ciclo_ativo else "Aporte Real"
         savings_label = "Savings Rate Atual" if is_ciclo_ativo else "Savings Rate Final"
 
-        st.markdown(
-            f"""
-            <div class="context-bar">
-                <div class="context-chip">
-                    <div class="label">Receita Base</div>
-                    <div class="value">R$ {RECEITA_BASE:,.2f}</div>
-                </div>
-                <div class="context-chip">
-                    <div class="label">Teto do Ciclo</div>
-                    <div class="value">R$ {TETO_GASTOS:,.2f}</div>
-                </div>
-                <div class="context-chip">
-                    <div class="label">Meta de Aporte</div>
-                    <div class="value">R$ {META_APORTE:,.2f}</div>
-                </div>
-                <div class="context-chip">
-                    <div class="label">Fechamento</div>
-                    <div class="value">{fechamento_display}</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+
 
         # ── Score de Saúde Financeira ──
         qtd_outros_score = 0
@@ -220,6 +198,46 @@ def render_page():
                     unsafe_allow_html=True,
                 )
     
+        # ── Aporte Card (primeiro elemento visual da tela) ──
+        if r["aporte_real"] < 0:
+            _aporte_status = "🚨 COMPROMETIDO"
+            _aporte_accent = "var(--danger, #B42318)"
+            _aporte_bg = "linear-gradient(135deg, rgba(180,35,24,0.08), rgba(180,35,24,0.02))"
+            _aporte_border = "rgba(180,35,24,0.25)"
+        elif r["meta_ameacada"]:
+            _aporte_status = "⚠ AMEAÇADO"
+            _aporte_accent = "var(--warning-text, #B45309)"
+            _aporte_bg = "linear-gradient(135deg, rgba(180,83,9,0.08), rgba(180,83,9,0.02))"
+            _aporte_border = "rgba(180,83,9,0.25)"
+        else:
+            _aporte_status = "✅ Meta preservada"
+            _aporte_accent = "var(--success, #0F766E)"
+            _aporte_bg = "linear-gradient(135deg, rgba(15,118,110,0.08), rgba(15,118,110,0.02))"
+            _aporte_border = "rgba(15,118,110,0.25)"
+
+        st.markdown(f"""
+        <div style="
+            background: {_aporte_bg};
+            border: 1.5px solid {_aporte_border};
+            border-radius: 14px;
+            padding: 1.1rem 1.25rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        ">
+            <div>
+                <div style="font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin-bottom:0.2rem;">{aporte_label}</div>
+                <div style="font-size:1.65rem; font-weight:850; color:{_aporte_accent}; line-height:1.15;">R$ {r['aporte_real']:,.2f}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:0.82rem; font-weight:700; color:{_aporte_accent};">{_aporte_status}</div>
+                <div style="font-size:0.72rem; color:var(--text-secondary); margin-top:0.15rem;">Savings {savings_rate:.1f}% · Meta R$ {META_APORTE:,.0f}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         # ---- KPI gigante ----
         if is_ciclo_ativo:
             # Burn rate: dias já passados no ciclo = total_do_ciclo - dias_restantes + 1
@@ -279,32 +297,7 @@ def render_page():
             except Exception:
                 pass
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Variáveis", f"R$ {r['total_variaveis']:,.2f}",
-                  delta=f"{delta_var:+,.0f} R$ vs anterior" if delta_var is not None else None,
-                  delta_color="inverse")
-        c2.metric("Saldo p/ Variáveis", f"R$ {r['saldo_variaveis']:,.2f}",
-                  delta=f"{delta_saldo:+,.0f} R$ vs anterior" if delta_saldo is not None else None,
-                  delta_color="normal")
-        if r["aporte_real"] < 0:
-            _aporte_delta = "-🚨 COMPROMETIDO"
-            _aporte_color = "normal"
-        elif r["meta_ameacada"]:
-            _aporte_delta = "-⚠ AMEAÇADO"
-            _aporte_color = "normal"
-        else:
-            _aporte_delta = "✅ OK"
-            _aporte_color = "normal"
-        c3.metric(aporte_label, f"R$ {r['aporte_real']:,.2f}",
-                  delta=_aporte_delta, delta_color=_aporte_color)
-        c4.metric(savings_label, f"{savings_rate:.1f}%",
-                  delta=f"{delta_sr:+.1f}pp vs anterior" if delta_sr is not None else None,
-                  delta_color="normal")
-        st.caption(
-            f"Envelope inicial para variáveis: R\\$ {r['limite_base_var']:,.2f} · "
-            f"Saldo do teto: R\\$ {r['saldo_teto']:,.2f}"
-        )
-    
+
         # ── Score de Saúde Financeira (badge) ──
         _sc = score_data
         _score_cls = "badge-green" if _sc["score"] >= 70 else ("badge-yellow" if _sc["score"] >= 50 else "badge-red")
@@ -395,7 +388,7 @@ def render_page():
                 total_c = len(df_cartao)
                 qtd_conf = len(confirmados)
                 
-                with st.expander(f"✅ Conciliação de Gastos Fixos ({qtd_conf}/{total_c})", expanded=not pendentes.empty):
+                with st.expander(f"✅ Conciliação de Gastos Fixos ({qtd_conf}/{total_c})", expanded=False):
                     st.caption("Este bloco responde à pergunta: o que ainda precisa ser conferido?")
                     if not pendentes.empty:
                         st.markdown("**Pendentes**")
@@ -463,6 +456,7 @@ def render_page():
         # Tabela unificada para o restante do resumo
         table_html = '<table class="summary-table" style="margin-top: 0.15rem;">'
         table_html += '<tbody>'
+        table_html += f'<tr><td>Total Variáveis</td><td style="text-align:right">R$ {r["total_variaveis"]:,.2f}</td></tr>'
         table_html += f'<tr><td><strong>Total Fixos</strong></td><td style="text-align:right"><strong>R$ {r["total_fixos"]:,.2f}</strong></td></tr>'
         if total_creditos > 0:
             table_html += f'<tr><td style="color:var(--success);">↩ Créditos/Estornos</td><td style="text-align:right; color:var(--success);">− R$ {total_creditos:,.2f}</td></tr>'
