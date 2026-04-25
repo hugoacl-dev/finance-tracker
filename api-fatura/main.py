@@ -417,7 +417,7 @@ def classificar_transacoes(
 
     prompt = (
         "Classifique cada transação abaixo em uma das categorias: "
-        "Alimentação, Supermercado, Transporte, Saúde, Assinatura, Lazer, Pet, "
+        "Alimentação, Supermercado, Transporte, Saúde, Odontologia, Assinatura, Lazer, Pet, "
         "Compras, Combustível, Casa, Outros. "
         'Responda APENAS em JSON no formato: [{"idx": <indice_inteiro>, "categoria": "<categoria>"}]\n\n'
     )

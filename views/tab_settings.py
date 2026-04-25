@@ -327,7 +327,7 @@ def render_page():
             if "lote_classificado" not in st.session_state:
                 if gemini_client:
                     with st.spinner("Classificando transações com Gemini..."):
-                        prompt = "Classifique cada transação abaixo em uma das categorias: Alimentação, Supermercado, Transporte, Saúde, Assinatura, Lazer, Pet, Compras, Combustível, Casa, Outros. Responda APENAS em JSON no formato: [{\"idx\": <indice_inteiro>, \"categoria\": \"<categoria>\"}]\n\n"
+                        prompt = "Classifique cada transação abaixo em uma das categorias: Alimentação, Supermercado, Transporte, Saúde, Odontologia, Assinatura, Lazer, Pet, Compras, Combustível, Casa, Outros. Responda APENAS em JSON no formato: [{\"idx\": <indice_inteiro>, \"categoria\": \"<categoria>\"}]\n\n"
                         
                         regras_ia = cfg_raw.get("Regras_IA", "").strip() if cfg_raw else ""
                         if regras_ia:
@@ -375,7 +375,7 @@ def render_page():
                 use_container_width=True,
                 column_config={
                     "Perfil": st.column_config.SelectboxColumn("Destino", options=["Principal", "Dependente"], required=True),
-                    "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros"])
+                    "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Odontologia", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros"])
                 },
                 key="editor_pendentes"
             )
@@ -480,7 +480,7 @@ def render_page():
             column_config={
                 "_id": None, # Esconde o ID interno do usuário
                 "Descricao": st.column_config.TextColumn("Descrição", width="medium"),
-                "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros", "Crédito/Estorno"]),
+                "Categoria": st.column_config.SelectboxColumn("Categoria", options=["Alimentação", "Supermercado", "Transporte", "Saúde", "Odontologia", "Assinatura", "Lazer", "Pet", "Compras", "Combustível", "Casa", "Outros", "Crédito/Estorno"]),
                 "Valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
                 "Cartao": st.column_config.TextColumn("Cartão (ex: 1234, Nubank)"),
             },
@@ -885,7 +885,6 @@ def render_page():
                     st.error(f"Erro: {e}")
             else:
                 st.warning("Preencha título e valor.")
-
 
 
 
